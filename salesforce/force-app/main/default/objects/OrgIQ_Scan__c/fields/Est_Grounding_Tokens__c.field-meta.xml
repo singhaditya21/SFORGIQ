@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Est_Grounding_Tokens__c</fullName>
+    <description>Estimated tokens an agent retrieves for these fields today. Deterministic character-based estimate, not a model tokenizer count.</description>
+    <inlineHelpText>Estimated tokens an agent retrieves for these fields today. Deterministic character-based estimate, not a model tokenizer count.</inlineHelpText>
+    <label>Est Grounding Tokens</label>
+    <precision>18</precision>
+    <scale>0</scale>
+    <type>Number</type>
+</CustomField>

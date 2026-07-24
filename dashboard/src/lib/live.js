@@ -49,30 +49,53 @@ function cleanUrl() {
 export async function handleRedirect() {
   const u = new URL(window.location.href)
   const err = u.searchParams.get('error')
-  if (err) { cleanUrl(); throw new Error(u.searchParams.get('error_description') || err) }
   const code = u.searchParams.get('code')
-  if (!code) return null
-  if (u.searchParams.get('state') !== sessionStorage.getItem(S)) {
-    cleanUrl(); throw new Error('OAuth state mismatch')
+  if (!err && !code) return null // not a redirect — leave the address bar alone
+
+  // Salesforce spends the code the moment it hands it to us, so it is dead
+  // whichever way this ends — including when fetch() itself rejects. Clean the
+  // URL in a finally so it happens exactly once and a reload can never replay it.
+  try {
+    if (err) throw new Error(u.searchParams.get('error_description') || err)
+    if (u.searchParams.get('state') !== sessionStorage.getItem(S)) {
+      throw new Error('OAuth state mismatch')
+    }
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      client_id: sfConfig.clientId,
+      redirect_uri: redirectUri(),
+      code_verifier: sessionStorage.getItem(V) || '',
+    })
+    let res
+    try {
+      res = await fetch(`${sfConfig.loginUrl}/services/oauth2/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      })
+    } catch (e) {
+      // fetch() only rejects like this on a network/CORS failure. This POST is
+      // CORS-simple, so there is no preflight to block it: the org almost
+      // certainly processed the exchange and we were denied the response body
+      // for want of an Access-Control-Allow-Origin header.
+      const why = (e && e.message) || String(e)
+      throw new Error(
+        `could not read the token response from ${sfConfig.loginUrl} (${why}). ` +
+        `Most likely this origin (${window.location.origin}) is not on the org's ` +
+        'CORS allowlist with "Allow OAuth endpoints" enabled (Setup → CORS). ' +
+        'The authorization code is single-use and is now spent, so sign in again ' +
+        'after fixing the allowlist — reloading this page will not recover it'
+      )
+    }
+    if (!res.ok) throw new Error(`token exchange failed (${res.status}) — check the org CORS allowlist`)
+    const t = await res.json()
+    const tok = { accessToken: t.access_token, instanceUrl: t.instance_url }
+    sessionStorage.setItem(TOK, JSON.stringify(tok))
+    return tok
+  } finally {
+    cleanUrl()
   }
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    client_id: sfConfig.clientId,
-    redirect_uri: redirectUri(),
-    code_verifier: sessionStorage.getItem(V) || '',
-  })
-  const res = await fetch(`${sfConfig.loginUrl}/services/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  })
-  cleanUrl()
-  if (!res.ok) throw new Error(`token exchange failed (${res.status}) — check the org CORS allowlist`)
-  const t = await res.json()
-  const tok = { accessToken: t.access_token, instanceUrl: t.instance_url }
-  sessionStorage.setItem(TOK, JSON.stringify(tok))
-  return tok
 }
 
 async function soql(tok, q) {

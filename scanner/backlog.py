@@ -14,8 +14,10 @@ Design, straight from PRD §4.6:
     imports.
 
   - **Idempotency.** Each row carries a deterministic External ID
-    `hash(rule_id + component + source)`. Re-importing updates the same ticket
-    instead of duplicating it — this is what turns a one-off audit into a
+    `hash(rule_id + component + source)`, plus `detail` for the handful of rules
+    where detail identifies *which* finding this is rather than describing its
+    current state (see `_IDENTITY_DETAIL_RULES`). Re-importing updates the same
+    ticket instead of duplicating it — this is what turns a one-off audit into a
     trackable burn-down.
 
   - **Findings cluster into epics before emission** (PRD §4.6). Here each rule
@@ -29,6 +31,21 @@ the CSV header and the report both say so.
 
 import csv
 import hashlib
+
+# ---------------------------------------------------------- provenance
+
+# Where a finding came from. Native rule findings are "OrgIQ"; the same backlog
+# will later carry ingested Optimizer / Health Check / Code Analyzer findings
+# (PRD §7.3, "ingested, not duplicated"), and a reviewer triaging a ticket needs
+# to know which engine made the claim before trusting it.
+FINDING_SOURCE = "OrgIQ"
+
+
+def _finding_source(finding) -> str:
+    """Provenance of a single finding. Ingested findings may carry their own
+    `source`; anything the scanner rules produce is FINDING_SOURCE."""
+    return getattr(finding, "source", "") or FINDING_SOURCE
+
 
 # --------------------------------------------------------------- gate
 
@@ -148,6 +165,28 @@ _PLAYBOOK = {
             "One canonical field remains; duplicates are deprecated with data "
             "and references migrated. Re-scan reports no D1.SEMANTIC_DUPLICATE "
             "for this cluster."
+        ),
+    },
+
+    "D1.UNREFERENCED_FIELD": {
+        "epic": "Retire unreferenced fields",
+        "points": 3,
+        "remediation": (
+            "1. Confirm the field is genuinely unused. Source mode only sees "
+            "reports and dashboards that are committed to the repo, so check "
+            "integrations, managed packages, and anything outside this "
+            "repository before treating 'no references' as 'unused'.\n"
+            "2. If it is dead, deprecate before deleting: remove it from page "
+            "layouts and permission sets and let a full business cycle pass.\n"
+            "3. Delete the field. If it must stay, describe what it is for so "
+            "it stops competing with live fields for retrieval."
+        ),
+        "acceptance": (
+            "Field is deleted, or retained with a documented reason and hidden "
+            "from the agent's layouts and permissions. Absence of references "
+            "was verified against integrations and managed packages, not just "
+            "the committed report metadata. Re-scan reports no "
+            "D1.UNREFERENCED_FIELD for this field."
         ),
     },
 
@@ -278,12 +317,33 @@ def _component_type(finding) -> str:
     return "CustomField group" if "[" in finding.component else "CustomField"
 
 
+# Rules whose `detail` is IDENTITY, not state.
+#
+# For these, detail says *which* finding this is — the members of a duplicate
+# cluster or numbered family, or which occurrence on a trigger — and two
+# findings on the same component are only distinguishable by it (both render as
+# "Obj [2 fields]"). It must be hashed or the ids collide on upsert.
+#
+# For every other rule detail is a snapshot of mutable state ("label='X'",
+# "desc='...'"), and hashing it re-mints the ticket id the moment somebody edits
+# the label or description — i.e. the moment they start fixing the finding. The
+# tracked ticket orphans, a new one appears, and the burn-down that is the whole
+# point of a stable External ID is destroyed.
+_IDENTITY_DETAIL_RULES = {
+    "D1.NUMBERED_FAMILY",
+    "D1.SEMANTIC_DUPLICATE",
+    "D5.MULTIPLE_TRIGGERS",
+    "D5.DML_IN_LOOP",
+    "D5.NO_RECURSION_GUARD",
+}
+
+
 def _external_id(finding, source: str) -> str:
     """Deterministic, idempotent id (PRD §4.6). Source stands in for org_id
     in source mode, so re-scanning the same repo yields the same id. `detail`
-    is included so two aggregate findings on the same object (e.g. two distinct
-    duplicate pairs, both rendered as "Obj [2 fields]") get distinct ids."""
-    raw = f"{finding.rule_id}|{finding.component}|{finding.detail}|{source}"
+    joins the hash only for _IDENTITY_DETAIL_RULES — see the note there."""
+    detail = finding.detail if finding.rule_id in _IDENTITY_DETAIL_RULES else ""
+    raw = f"{finding.rule_id}|{finding.component}|{detail}|{source}"
     return "OIQ-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
@@ -310,7 +370,10 @@ def _description(finding, source: str) -> str:
         f"Acceptance criteria: {play['acceptance']}",
         "",
         f"Blast radius: n/a (source mode — no dependency graph)",
-        f"Source: {source}",
+        # Two different "sources": where the org came from, and which engine
+        # raised the finding. Label both so the ticket is not ambiguous.
+        f"Scan source: {source}",
+        f"Finding source: {_finding_source(finding)}",
         f"Effort points are PROVISIONAL (uncalibrated, PRD §8/§11).",
     ]
     return "\n".join(lines)
@@ -332,6 +395,7 @@ BACKLOG_COLUMNS = [
     "Severity",
     "Confidence",
     "Rule Maturity",
+    "Source",            # which engine raised it — OrgIQ, or an ingested tool
     "Description",
 ]
 
@@ -366,6 +430,7 @@ def to_rows(findings, source: str):
             "Severity": f.severity,
             "Confidence": f.confidence,
             "Rule Maturity": "experimental",
+            "Source": _finding_source(f),
             "Description": _description(f, source),
         })
     return rows, observations

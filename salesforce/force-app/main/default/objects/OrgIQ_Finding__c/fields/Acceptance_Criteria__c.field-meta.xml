@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Acceptance_Criteria__c</fullName>
+    <description>What must be true for this finding to count as resolved. Stored on the record so reviewers do not have to re-open the exported ticket.</description>
+    <inlineHelpText>What must be true for this finding to count as resolved. Stored on the record so reviewers do not have to re-open the exported ticket.</inlineHelpText>
+    <label>Acceptance Criteria</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>4</visibleLines>
+</CustomField>

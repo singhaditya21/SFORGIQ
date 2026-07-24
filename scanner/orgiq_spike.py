@@ -19,6 +19,7 @@ from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
 import backlog       # sibling module; scanner/ dir is on sys.path when run directly
+import density       # semantic density / grounding payload estimates
 import metadata as sfmeta  # Flow / Apex / trigger / permission-set parsing (D3–D5)
 import scan_result   # sibling module
 
@@ -314,18 +315,160 @@ def rule_semantic_duplicate(fields: list[Field], threshold: float = 0.85) -> lis
     return out
 
 
+# ------------------------------------------------------ reference signals
+
+# Anything that could be a field API name in Apex or Flow XML. Field references
+# are written `Object__c.Field__c`, and the dot ends the match, so the field name
+# lands in the set on its own.
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def code_identifiers(meta) -> frozenset:
+    """Lowercased identifiers appearing anywhere in Apex, trigger or Flow source.
+
+    Source mode has no MetadataComponentDependency, so the only honest way to
+    ask "does anything call this field?" is to look for its API name in the
+    files that could call it. Flow XML is re-read from disk because FlowMeta
+    keeps no body. Over-matching is deliberate: a name mentioned in a comment
+    counts as a reference, so the unreferenced rule errs towards silence.
+    """
+    bodies = [c.body for c in meta.apex] + [t.body for t in meta.triggers]
+    for fl in meta.flows:
+        if not fl.path:
+            continue
+        try:
+            bodies.append(Path(fl.path).read_text(errors="replace"))
+        except OSError:
+            continue
+    toks = set()
+    for body in bodies:
+        toks.update(m.group(0).lower() for m in _IDENT.finditer(body))
+    return frozenset(toks)
+
+
+def rule_unreferenced_field(fields: list[Field], report_refs=None,
+                            code_tokens=frozenset()) -> list[Finding]:
+    """A custom field nothing looks at — no report, no dashboard, no flow, no
+    Apex. It is retirement material: payload a retriever carries and a planner
+    has to rule out, for no business reason anyone can point to.
+
+    Evidence-gated. With no report or dashboard metadata parsed we cannot tell
+    an unused field from an unobserved one, so the rule returns nothing rather
+    than declaring the whole org dead. Never High confidence either: source mode
+    has no dependency graph, code usage is matched textually, and layouts,
+    validation rules, formulas and external integrations are invisible from here.
+    """
+    if report_refs is None or not report_refs.available:
+        return []                      # absence of evidence is not evidence of absence
+
+    # With no Apex/Flow source to search, "unreferenced" rests on reports alone,
+    # which is a thinner claim again.
+    conf = "Medium" if code_tokens else "Low"
+    seen_note = ("no Apex or Flow reference" if code_tokens
+                 else "no Apex or Flow source available to check")
+
+    out = []
+    for f in fields:
+        if not re.search(r"__c$", f.api_name, re.I):
+            continue                   # standard fields are not ours to retire
+        if f.type == "MasterDetail":
+            continue                   # structural — retiring it deletes the relationship
+        if report_refs.referenced(f.object_name, f.api_name):
+            continue
+        if f.api_name.lower() in code_tokens:
+            continue
+        out.append(Finding(
+            "D1.UNREFERENCED_FIELD", "D1", "Medium", conf,
+            f"{f.object_name}.{f.api_name}",
+            f"not referenced by any of the {report_refs.report_count} "
+            f"report/dashboard file(s) parsed; {seen_note}",
+            f"label={f.label!r}",
+        ))
+    return out
+
+
 RULES = [
     ("D1.MISSING_DESCRIPTION", rule_missing_description),
     ("D1.LOW_INFO_DESCRIPTION", rule_low_information_description),
     ("D1.CRYPTIC_API_NAME", rule_cryptic_api_name),
     ("D1.NUMBERED_FAMILY", rule_numbered_family),
     ("D1.SEMANTIC_DUPLICATE", rule_semantic_duplicate),
+    ("D1.UNREFERENCED_FIELD", rule_unreferenced_field),
 ]
+
+# Rules that consume reference data. Everything else keeps its single-argument
+# signature, which is what the tests and scanner/density.py call.
+_NEEDS_REFS = {"D1.UNREFERENCED_FIELD"}
+
+
+# ------------------------------------------------- blast-radius post-pass
+
+# A defect on a field forty reports depend on is the same defect with a far
+# larger blast radius. Reports are the cheapest proxy the org gives us for that:
+# they are what the business actually looks at.
+_BLAST_THRESHOLD = 3          # documents; provisional, like the effort table
+_SEV_UP = {"Low": "Medium", "Medium": "High", "High": "High", "Critical": "Critical"}
+
+
+def _finding_fields(finding) -> list:
+    """(object, field) pairs a D1 finding is about. Field-level findings carry
+    'Object.Field'; aggregate ones carry 'Object [N fields]' plus a
+    pipe-separated detail listing the members."""
+    comp = finding.component
+    if "[" in comp:
+        obj = comp.rsplit(" [", 1)[0]
+        return [(obj, n.strip()) for n in finding.detail.split("|") if n.strip()]
+    obj, _, fld = comp.rpartition(".")
+    return [(obj, fld)] if fld else []
+
+
+def apply_report_weighting(findings: list[Finding], report_refs) -> list[Finding]:
+    """Re-weight D1 findings by how many reports and dashboards depend on the
+    field, and say so in the evidence. Mutates and returns `findings`; run once.
+
+    Deliberately a post-pass, not part of the rules. Blast radius has nothing to
+    do with *whether* a field is cryptic or duplicated — it is what that costs —
+    so it belongs after detection, where it can be re-tuned or dropped without
+    touching rule logic.
+
+    Severity climbs one step at the threshold. Confidence climbs at most to
+    Medium and only from Low: report usage proves the field is live, which is
+    enough to make a speculative finding worth reviewing, never enough to make a
+    heuristic certain.
+    """
+    if report_refs is None or not report_refs.available:
+        return findings
+    for f in findings:
+        # The unreferenced rule is excluded by definition — its findings are the
+        # ones with a reference count of zero.
+        if f.dimension != "D1" or f.rule_id == "D1.UNREFERENCED_FIELD":
+            continue
+        counts = [report_refs.referenced(o, n) for o, n in _finding_fields(f)]
+        n = max(counts) if counts else 0
+        if not n:
+            continue
+        f.evidence += f"; referenced by {n} report/dashboard file(s)"
+        if n >= _BLAST_THRESHOLD:
+            f.severity = _SEV_UP.get(f.severity, f.severity)
+            if f.confidence == "Low":
+                f.confidence = "Medium"
+    return findings
+
+
+def all_d1_findings(fields: list[Field], report_refs=None,
+                    code_tokens=frozenset()) -> list[Finding]:
+    """Every D1 finding for these fields, blast-radius weighting applied."""
+    out = []
+    for rule_id, fn in RULES:
+        out.extend(fn(fields, report_refs, code_tokens) if rule_id in _NEEDS_REFS
+                   else fn(fields))
+    return apply_report_weighting(out, report_refs)
 
 
 # ------------------------------------------------------------- report
 
-def report(name: str, fields: list[Field], findings: list[Finding], show: int) -> str:
+def report(name: str, fields: list[Field], findings: list[Finding], show: int,
+           report_refs=None) -> str:
     L = []
     L.append(f"# OrgIQ spike — {name}\n")
     L.append(f"Fields parsed: **{len(fields)}** across "
@@ -351,6 +494,31 @@ def report(name: str, fields: list[Field], findings: list[Finding], show: int) -
              f"**{low_info}** carry no information beyond the label, "
              f"so effective coverage is "
              f"**{(described-low_info)/len(fields)*100:.1f}%**\n")
+
+    # Coverage says how much text exists; density says whether it was worth
+    # carrying. Both are arithmetic over the metadata — no model is consulted.
+    pct = density.semantic_density(fields) * 100
+    payload = density.grounding_payload(fields)
+    cur, rem = payload["current_tokens"], payload["remediated_tokens"]
+    shrink = (1 - rem / cur) * 100 if cur else 0.0
+    L.append(f"Semantic density: **{pct:.1f}%** — the share of description words "
+             f"that add something the field's own label and API name do not "
+             f"already say. Deterministic estimate, not a model metric.\n")
+    L.append(f"Estimated grounding payload: **{cur:,}** tokens today, "
+             f"**{rem:,}** once the LOW_INFO_DESCRIPTION and SEMANTIC_DUPLICATE "
+             f"plays land — **{shrink:.0f}%** smaller. Deterministic estimates "
+             f"(roughly characters/4), not model tokenizer counts.\n")
+
+    if report_refs is not None:
+        if report_refs.available:
+            L.append(f"Reporting documents parsed: **{report_refs.report_count}** "
+                     f"({report_refs.dashboard_count} dashboard(s)). Findings on "
+                     f"fields those documents depend on are weighted up — "
+                     f"the same defect costs more where the business is looking.\n")
+        else:
+            L.append("No report or dashboard metadata in this project, so "
+                     "D1.UNREFERENCED_FIELD did not run and no finding was "
+                     "weighted by blast radius.\n")
 
     for rid, _ in RULES:
         fs = by_rule[rid]
@@ -392,19 +560,21 @@ def main():
     if not fields:
         sys.exit("no field metadata found")
 
-    findings = []
-    for _, fn in RULES:
-        findings.extend(fn(fields))
+    # Parsed before the D1 rules run: reports say which fields the business
+    # actually consumes, which both gates D1.UNREFERENCED_FIELD and weights
+    # everything else D1 finds.
+    org_meta = sfmeta.parse_project(root)
+    findings = all_d1_findings(fields, org_meta.report_refs,
+                               code_identifiers(org_meta))
 
     # D3–D5 run whenever the project actually carries the metadata they need
     # (Flows, Apex, triggers, permission sets). D2 needs record data, so in
     # source mode it stays unassessed.
     import rules_ext                      # imported late: rules_ext needs Finding from here
-    org_meta = sfmeta.parse_project(root)
     findings.extend(rules_ext.all_findings(org_meta))
     assessed = frozenset({"D1"} | org_meta.assessable_dims())
 
-    md = report(a.name or root.name, fields, findings, a.show)
+    md = report(a.name or root.name, fields, findings, a.show, org_meta.report_refs)
     if a.out:
         Path(a.out).write_text(md)
         print(f"wrote {a.out}")

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>Customer Segment Coverage</name>
+    <reportType>Legacy_Customer__c</reportType>
+    <format>Summary</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Legacy_Customer__c.Full_Name__c</field>
+    </columns>
+    <columns>
+        <field>Legacy_Customer__c.Email_Address__c</field>
+    </columns>
+    <columns>
+        <field>Legacy_Customer__c.Last_Verified__c</field>
+    </columns>
+    <columns>
+        <field>Legacy_Customer__c.Acct1_Ref__c</field>
+    </columns>
+    <columns>
+        <field>Legacy_Customer__c.Do_Not_Call__c</field>
+    </columns>
+    <groupingsDown>
+        <field>Legacy_Customer__c.Segment__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <filter>
+        <criteriaItems>
+            <column>Legacy_Customer__c.Do_Not_Call__c</column>
+            <operator>equals</operator>
+            <value>false</value>
+        </criteriaItems>
+    </filter>
+</Report>

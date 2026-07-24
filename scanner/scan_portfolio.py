@@ -12,14 +12,17 @@ Fields are generated in memory and run through the real D1 rules — findings ar
 genuine rule output, not fabricated. Deterministic (seeded), stdlib only.
 
     python3 scanner/scan_portfolio.py --out portfolio.json
+    python3 scanner/scan_portfolio.py --out portfolio.json --backlog backlog.csv
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import random
 
+import backlog                         # gate + row shaping for the Jira CSV
 import metadata as md                  # Flow / Apex / trigger / permission-set model
 import orgiq_spike as scanner          # Field, RULES, ABBREV
 import rules_ext                       # the real D2–D5 rule packs
@@ -28,6 +31,17 @@ import scan_result
 Field = scanner.Field
 ABBREV = scanner.ABBREV
 FULL_TO_ABBR = {v: k for k, v in ABBREV.items()}   # e.g. "amount" -> "amt"
+
+# --------------------------------------------------------- record budget
+#
+# Everything this script emits lands in a Developer Edition org, which allows
+# ~5 MB of data and charges 2 KB per custom-object record whatever the row
+# actually weighs. Records = scans + dimension scores + findings, so a rule that
+# fires once per field (D1.UNREFERENCED_FIELD does) moves the total fast. The
+# budget is deliberately below the ceiling: a bulk load that half-fits is worse
+# than a smaller corpus.
+RECORD_KB = 2
+RECORD_BUDGET = 2300               # ≈4.5 MB of the org's ~5 MB allocation
 
 # ------------------------------------------------------------ vocabulary
 
@@ -169,13 +183,55 @@ def gen_object_fields(obj, n, defect_ratio, rnd) -> list:
     return fields
 
 
-def gen_org_metadata(objects, r, rnd) -> md.OrgMetadata:
-    """Build the Flow / Apex / trigger / permission-set material for one org.
+def gen_report_refs(fields, r, rnd) -> md.ReportRefs:
+    """Synthetic report/dashboard consumption for one org.
+
+    Same shape `metadata.parse_reports` returns, so D1.UNREFERENCED_FIELD and the
+    blast-radius weighting run on the demo portfolio exactly as they do on a real
+    SFDX tree. Driven by the org's defect ratio like everything else here: a
+    neglected org keeps building fields and stops building reports, so the share
+    of fields no document touches climbs with the ratio.
+
+    The dark share stays modest on purpose. Real legacy orgs are far darker than
+    this, but every unreferenced field is a record in a 2 KB-per-row org — see
+    RECORD_BUDGET.
+    """
+    refs = md.ReportRefs()
+    if not fields:
+        return refs
+
+    # Reporting estate: about one document per ten fields, thinner where the org
+    # stopped investing — the same neglect the defect ratio already encodes.
+    n_docs = max(3, int(round(len(fields) * 0.10 * (1.2 - 0.6 * r))))
+    refs.report_count = n_docs
+    refs.dashboard_count = max(1, n_docs // 4)
+
+    # Share of fields nothing reports on. Sampled to an exact count rather than
+    # rolled per field: at ~85 fields an independent roll per field varies by
+    # several points either way, which was enough to make the Helios quarters
+    # tick *up* mid-remediation. The burn-down has to be monotonic to be read.
+    dark_n = int(round(len(fields) * (0.02 + 0.13 * r)))
+    dark = set(rnd.sample(range(len(fields)), dark_n))
+
+    for i, f in enumerate(fields):
+        if i in dark:
+            continue
+        # Most live fields sit on one or two documents; a small core is on enough
+        # of them to cross the blast-radius threshold and weight its findings up.
+        roll = rnd.random()
+        hits = 1 if roll < 0.62 else (2 if roll < 0.88 else rnd.randint(3, min(8, n_docs)))
+        refs.refs[f"{f.object_name}.{f.api_name}"] = hits
+    return refs
+
+
+def gen_org_metadata(objects, fields, r, rnd) -> md.OrgMetadata:
+    """Build the Flow / Apex / trigger / permission-set / report material for one org.
 
     These are the *same structures* the SFDX parsers produce, and the *same*
     real rule packs run over them — only the inputs are synthesised, scaled by
     the org's defect ratio. Bodies are real Apex text, so the DML-in-loop and
-    recursion-guard heuristics genuinely fire.
+    recursion-guard heuristics genuinely fire, and the report references are real
+    ReportRefs, so D1.UNREFERENCED_FIELD and the blast-radius weighting do too.
     """
     flows, apex, triggers, perms, stats = [], [], [], [], []
 
@@ -254,8 +310,13 @@ def gen_org_metadata(objects, r, rnd) -> md.OrgMetadata:
             duplicate_rate=min(0.5, r * rnd.uniform(0.05, 0.35)),
         ))
 
+    # Last, so adding it left every draw above unchanged and the D2–D5 findings
+    # this portfolio already ships stayed byte-identical.
+    refs = gen_report_refs(fields, r, rnd)
+
     return md.OrgMetadata(flows=flows, apex=apex, triggers=triggers,
-                          permission_sets=perms, record_stats=stats)
+                          permission_sets=perms, record_stats=stats,
+                          report_refs=refs)
 
 
 def gen_org(name, industry, total_fields, defect_ratio, n_objects, mode, seed):
@@ -271,7 +332,10 @@ def gen_org(name, industry, total_fields, defect_ratio, n_objects, mode, seed):
 # --------------------------------------------------------- portfolio spec
 #
 # (name, industry, total_fields, defect_ratio, n_objects, mode)
-# defect_ratio drives the readiness band; sizes drive the finding volume.
+# defect_ratio drives the readiness band; sizes drive the finding volume — and
+# therefore the record count, so raising them is a RECORD_BUDGET decision. The
+# heaviest orgs were trimmed when D1.UNREFERENCED_FIELD started firing; the
+# bands are set by the ratios, so trimming volume left every band in place.
 
 SPECS = [
     # Ready / Conditionally Ready — clean, modern orgs
@@ -289,58 +353,121 @@ SPECS = [
     ("Trailhead Education",      "Edu",     80, 0.48, 3, "Org"),
     ("Fathom Media Networks",    "Media",   84, 0.49, 3, "Source"),
     # Not Ready — old, heavily-accreted enterprise orgs
-    ("Gateway Health Alliance",  "Health",  90, 0.74, 3, "Org"),
-    ("Irongate Manufacturing",   "Mfg",     94, 0.82, 4, "Source"),
-    ("Summit Telecom Legacy",    "Telco",   94, 0.86, 4, "Org"),
-    ("Delta Logistics Intl",     "Logi",    90, 0.80, 4, "Hybrid"),
-    ("Crownpoint Insurance",     "Ins",     92, 0.84, 4, "Org"),
-    ("Old Mill Bancorp",         "Fin",     96, 0.88, 4, "Source"),
-    ("Redwood Utilities",        "Energy",  88, 0.78, 3, "Org"),
-    ("Beacon Public Sector",     "Gov",     92, 0.82, 4, "Source"),
+    ("Gateway Health Alliance",  "Health",  84, 0.74, 3, "Org"),
+    ("Irongate Manufacturing",   "Mfg",     88, 0.82, 4, "Source"),
+    ("Summit Telecom Legacy",    "Telco",   88, 0.86, 4, "Org"),
+    ("Delta Logistics Intl",     "Logi",    84, 0.80, 4, "Hybrid"),
+    ("Crownpoint Insurance",     "Ins",     88, 0.84, 4, "Org"),
+    ("Old Mill Bancorp",         "Fin",     88, 0.88, 4, "Source"),
+    ("Redwood Utilities",        "Energy",  84, 0.78, 3, "Org"),
+    ("Beacon Public Sector",     "Gov",     88, 0.82, 4, "Source"),
     # Time series — one org remediating over four quarters (burn-down)
-    ("Helios Airlines · 2025-Q1", "Travel",  96, 0.84, 4, "Org"),
-    ("Helios Airlines · 2025-Q2", "Travel",  96, 0.58, 4, "Org"),
-    ("Helios Airlines · 2025-Q3", "Travel",  96, 0.36, 4, "Org"),
-    ("Helios Airlines · 2025-Q4", "Travel",  96, 0.18, 4, "Org"),
+    ("Helios Airlines · 2025-Q1", "Travel",  88, 0.84, 4, "Org"),
+    ("Helios Airlines · 2025-Q2", "Travel",  88, 0.58, 4, "Org"),
+    ("Helios Airlines · 2025-Q3", "Travel",  88, 0.36, 4, "Org"),
+    ("Helios Airlines · 2025-Q4", "Travel",  88, 0.18, 4, "Org"),
 ]
 
 
 def build_portfolio():
-    scans = []
+    """Returns (scans, orgs) — the loadable records, and (name, findings) pairs
+    kept as raw Findings so the backlog emitter can gate them itself."""
+    scans, orgs = [], []
     for i, (name, industry, size, ratio, nobj, mode) in enumerate(SPECS):
         _, m, fields = gen_org(name, industry, size, ratio, nobj, mode, seed=1000 + i)
-        findings = []
-        for _, fn in scanner.RULES:            # D1 rules on real generated fields
-            findings.extend(fn(fields))
         objects = sorted({f.object_name for f in fields})
-        org_meta = gen_org_metadata(objects, ratio, random.Random(5000 + i))
+        # Built before the D1 rules run: the report references gate
+        # D1.UNREFERENCED_FIELD and weight every other D1 finding.
+        org_meta = gen_org_metadata(objects, fields, ratio, random.Random(5000 + i))
+        findings = scanner.all_d1_findings(fields, org_meta.report_refs,
+                                           scanner.code_identifiers(org_meta))
         findings.extend(rules_ext.all_findings(org_meta))   # the real D2–D5 packs
         scans.append(scan_result.build(fields, findings, name, scan_mode=m,
                                        assessed_dims=frozenset({"D1"} | org_meta.assessable_dims())))
-    return scans
+        orgs.append((name, findings))
+    return scans, orgs
+
+
+# ------------------------------------------------------ portfolio backlog
+
+# The per-org CSV is written by backlog.write_csv and has no org column, because
+# a single-org export does not need one. Merged across 24 orgs it does, so this
+# export is backlog.BACKLOG_COLUMNS with the org prepended — derived from that
+# list, never re-typed, so the two exports cannot drift apart.
+ORG_COLUMN = "Target Org"
+PORTFOLIO_COLUMNS = [ORG_COLUMN] + backlog.BACKLOG_COLUMNS
+
+
+def write_portfolio_backlog(orgs, path) -> tuple:
+    """Write ONE Jira-importable CSV covering every org in the portfolio.
+
+    Reuses backlog.to_rows verbatim — same §4.6 gate, same columns, same
+    external ids — so a consultant importing the merged file gets exactly the
+    rows the per-org exports would have produced, without merging 24 files by
+    hand. External ids already hash the scan source, i.e. the org name, so rows
+    from different orgs cannot collide on upsert.
+
+    Returns (rows_written, observations_held_back).
+    """
+    rows, observations = [], 0
+    for name, findings in orgs:
+        org_rows, obs = backlog.to_rows(findings, name)
+        for row in org_rows:
+            row[ORG_COLUMN] = name
+        rows.extend(org_rows)
+        observations += obs
+
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=PORTFOLIO_COLUMNS)
+        w.writeheader()
+        w.writerows(rows)
+    return len(rows), observations
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
+    ap.add_argument("--backlog", default=None,
+                    help="write ONE portfolio-wide Jira-importable CSV covering "
+                         "every org, each row tagged with the org it came from "
+                         "(threshold-gated: severity>=Medium AND confidence>=Medium)")
     a = ap.parse_args()
 
-    scans = build_portfolio()
+    scans, orgs = build_portfolio()
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump({"scans": scans}, fh, indent=2)
 
     total_f = sum(len(s["findings"]) for s in scans)
     total_d = sum(len(s["dimensions"]) for s in scans)
+    records = len(scans) + total_f + total_d
+    fields = sum(s["scan"]["components_scanned"] for s in scans)
+    unref = sum(1 for s in scans for f in s["findings"]
+                if f["rule_id"] == "D1.UNREFERENCED_FIELD")
     bands = {}
     for s in scans:
         b = s["scan"]["readiness_band"]
         bands[b] = bands.get(b, 0) + 1
     print(f"wrote {a.out}")
     print(f"  scans:      {len(scans)}")
-    print(f"  findings:   {total_f}")
+    print(f"  fields:     {fields}")
+    print(f"  findings:   {total_f}  ({unref} D1.UNREFERENCED_FIELD)")
     print(f"  dimensions: {total_d}")
-    print(f"  records:    {len(scans) + total_f + total_d}")
+    # The load target is a Developer Edition org: 2 KB per record, ~5 MB total.
+    print(f"  records:    {records} of {RECORD_BUDGET} budgeted "
+          f"— {records * RECORD_KB / 1024:.2f} MB at {RECORD_KB} KB/record")
     print(f"  bands:      {bands}")
+    if records > RECORD_BUDGET:
+        # Said out loud here rather than discovered halfway through a bulk load,
+        # which leaves the org holding a partial portfolio.
+        print(f"  WARNING:    over the record budget by {records - RECORD_BUDGET} "
+              f"— trim SPECS sizes before loading")
+
+    if a.backlog:
+        written, observations = write_portfolio_backlog(orgs, a.backlog)
+        print(f"\nwrote {a.backlog} — {written} backlog item(s) across "
+              f"{len(orgs)} orgs, {observations} observation(s) held back by the "
+              f"§4.6 gate (severity>=Medium AND confidence>=Medium)")
+
     print("\n  per-scan:")
     for s in scans:
         sc = s["scan"]

@@ -36,6 +36,14 @@ def dim_short(name):
     return name.split(" ", 1)[1] if " " in name else name
 
 
+def density_share(pct):
+    """Semantic_Density__c is a Salesforce Percent, so the org holds 42.5 for
+    42.5%. Everything downstream — scan_result's "semantic_density", the
+    dashboard — speaks the 0-1 share, so convert once here instead of leaving
+    every reader to guess which unit it got."""
+    return None if pct is None else pct / 100.0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--target-org", required=True)
@@ -46,7 +54,8 @@ def main():
     scans = query(
         "SELECT Name, External_Scan_Id__c, Target_Org__c, Scan_Mode__c, "
         "Rubric_Version__c, Composite_Score__c, Readiness_Band__c, "
-        "Components_Scanned__c, Gate_Applied__c, Gate_Reason__c, Scan_Timestamp__c "
+        "Components_Scanned__c, Semantic_Density__c, Est_Grounding_Tokens__c, "
+        "Est_Remediated_Tokens__c, Gate_Applied__c, Gate_Reason__c, Scan_Timestamp__c "
         "FROM OrgIQ_Scan__c ORDER BY Composite_Score__c ASC", org)
 
     dims = query(
@@ -57,7 +66,8 @@ def main():
     findings = query(
         "SELECT Scan__r.External_Scan_Id__c, External_Finding_Id__c, Rule_Id__c, "
         "Dimension__c, Severity__c, Confidence__c, Component_Type__c, "
-        "Component_Api_Name__c, Evidence__c, Remediation__c, Effort_Points__c, "
+        "Component_Api_Name__c, Evidence__c, Remediation__c, Epic__c, "
+        "Acceptance_Criteria__c, Source__c, Effort_Points__c, "
         "Blast_Radius__c, Emits_To_Backlog__c, Rule_Maturity__c, Status__c "
         "FROM OrgIQ_Finding__c", org)
 
@@ -86,6 +96,12 @@ def main():
             "component": f["Component_Api_Name__c"],
             "evidence": f["Evidence__c"] or "",
             "remediation": f["Remediation__c"] or "",
+            # Blank rather than a default: the dashboard's RULE_META mirror is
+            # the fallback, and an invented value here would hide an org whose
+            # findings predate these fields.
+            "epic": f["Epic__c"] or "",
+            "acceptanceCriteria": f["Acceptance_Criteria__c"] or "",
+            "source": f["Source__c"] or "",
             "effortPoints": f["Effort_Points__c"],
             "blastRadius": f["Blast_Radius__c"],
             "emitsToBacklog": f["Emits_To_Backlog__c"],
@@ -107,6 +123,9 @@ def main():
                 "compositeScore": s["Composite_Score__c"],
                 "readinessBand": s["Readiness_Band__c"],
                 "componentsScanned": s["Components_Scanned__c"],
+                "semanticDensity": density_share(s["Semantic_Density__c"]),
+                "estGroundingTokens": s["Est_Grounding_Tokens__c"],
+                "estRemediatedTokens": s["Est_Remediated_Tokens__c"],
                 "gateApplied": s["Gate_Applied__c"],
                 "gateReason": s["Gate_Reason__c"] or "",
                 "timestamp": s["Scan_Timestamp__c"],

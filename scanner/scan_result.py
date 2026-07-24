@@ -11,6 +11,12 @@ missing signal and excluded from the composite (PRD §7.2.4).
 
 Scoring is deterministic and PROVISIONAL: exact weights are placeholders until
 a rubric is calibrated. Bands and gate rules follow PRD §4.2–§4.3.
+
+The scan record also carries the §5.3 grounding metrics (semantic density and
+the before/after context payload). Those are ESTIMATES computed by
+scanner/density.py from metadata text — no tokenizer, no model — so the field
+names keep the `est_` prefix and nothing here should be read as a billed
+token count.
 """
 
 from __future__ import annotations
@@ -20,8 +26,14 @@ import re
 from datetime import datetime, timezone
 
 import backlog  # sibling module (remediation, effort, gate, external id)
+import density  # sibling module (deterministic grounding estimates)
 
 RUBRIC_VERSION = "0.2.0-spike"
+
+# Which tool produced a finding. Everything this scanner emits is "OrgIQ"; the
+# field exists so findings imported from Optimizer / Health Check / Code
+# Analyzer can share the record set without a schema change.
+DEFAULT_FINDING_SOURCE = "OrgIQ"
 
 BANDS = [
     (0, 40, "Not Ready"),
@@ -148,6 +160,11 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
     composite, gate_applied, gate_reason = _composite(dim_rows, findings)
     band = band_for(composite)
 
+    # Grounding metrics (PRD §5.3). Deterministic ESTIMATES over metadata text —
+    # they are for before/after and org/org comparison, never for invoicing, so
+    # the token keys stay explicitly prefixed `est_`.
+    payload = density.grounding_payload(fields)
+
     scan = {
         "external_scan_id": _scan_external_id(source),
         "target_org": source,
@@ -156,6 +173,9 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
         "composite_score": composite,
         "readiness_band": band,
         "components_scanned": len(fields),
+        "semantic_density": density.semantic_density(fields),
+        "est_grounding_tokens": payload["current_tokens"],
+        "est_remediated_tokens": payload["remediated_tokens"],
         "gate_applied": gate_applied,
         "gate_reason": gate_reason,
         "scan_timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.000+0000"),
@@ -174,9 +194,15 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
             "component_type": backlog._component_type(f),
             "component_api_name": f.component,
             "evidence": evidence,
+            "epic": play["epic"],
             "remediation": play["remediation"],
+            # Carried alongside the fix so a record says how the owner knows the
+            # work is done — otherwise only the Jira CSV ever shows it.
+            "acceptance_criteria": play["acceptance"],
             "effort_points": play["points"],
             "blast_radius": 0,
+            # Tool of origin, not the scanned org (that is scan.target_org).
+            "source": getattr(f, "source", "") or DEFAULT_FINDING_SOURCE,
             "emits_to_backlog": backlog.emits_to_backlog(f),
             "rule_maturity": "experimental",
             "status": "Open",

@@ -41,6 +41,16 @@
         <editable>true</editable>
     </fieldPermissions>
     <fieldPermissions>
+        <field>OrgIQ_Scan__c.Est_Grounding_Tokens__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Scan__c.Est_Remediated_Tokens__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
         <field>OrgIQ_Scan__c.External_Scan_Id__c</field>
         <readable>true</readable>
         <editable>true</editable>
@@ -76,7 +86,17 @@
         <editable>true</editable>
     </fieldPermissions>
     <fieldPermissions>
+        <field>OrgIQ_Scan__c.Semantic_Density__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
         <field>OrgIQ_Scan__c.Target_Org__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Finding__c.Acceptance_Criteria__c</field>
         <readable>true</readable>
         <editable>true</editable>
     </fieldPermissions>
@@ -116,6 +136,11 @@
         <editable>true</editable>
     </fieldPermissions>
     <fieldPermissions>
+        <field>OrgIQ_Finding__c.Epic__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
         <field>OrgIQ_Finding__c.Evidence__c</field>
         <readable>true</readable>
         <editable>true</editable>
@@ -142,6 +167,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <field>OrgIQ_Finding__c.Severity__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Finding__c.Source__c</field>
         <readable>true</readable>
         <editable>true</editable>
     </fieldPermissions>

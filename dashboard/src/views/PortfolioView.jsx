@@ -3,6 +3,7 @@ import {
   portfolioStats, bandBreakdown, portfolioFindingBreakdown, dimensionAverages,
   orgRows, heatmapRows, flattenFindings, applyFindingFilter,
   EMPTY_FILTER, findingFilterActive, ruleLabel, BAND_META,
+  backlogCsv, downloadCsv,
 } from '../lib/data.js'
 import KpiRow from '../components/KpiRow.jsx'
 import FilterBar from '../components/FilterBar.jsx'
@@ -47,6 +48,29 @@ export default function PortfolioView({ data }) {
   const shownIds = new Set(shownOrgs.map((r) => r.externalId))
   const heat = heatmapRows(scans).filter((h) => shownIds.has(h.externalId))
 
+  // One import file for everything on screen. The gate is re-applied by
+  // backlogCsv, but count it here so the button can say what it will hand over
+  // and stay dead when the current filter has no tickets in it.
+  const gated = useMemo(() => matching.filter((f) => f.emitsToBacklog), [matching])
+
+  const onDownload = () => {
+    const scanById = new Map(scans.map((s) => [s.scan.externalId, s.scan]))
+    const byOrg = new Map()
+    for (const f of gated) {
+      if (!byOrg.has(f.orgId)) byOrg.set(f.orgId, [])
+      byOrg.get(f.orgId).push(f)
+    }
+    // backlogCsv needs one scan for the description block, so build it per org
+    // and concatenate in the table's order: severity-sorted within an org, orgs
+    // in the order the page shows them. Every header but the first is dropped —
+    // the header line has no quoted newlines, so the first CRLF ends it.
+    const parts = shownOrgs
+      .filter((r) => byOrg.has(r.externalId))
+      .map((r) => backlogCsv(scanById.get(r.externalId), byOrg.get(r.externalId)))
+    const csv = parts.map((p, i) => (i === 0 ? p : p.slice(p.indexOf('\r\n') + 2))).join('')
+    downloadCsv('orgiq-portfolio-backlog.csv', csv)
+  }
+
   const drillLabel = filter.rule ? ruleLabel(filter.rule)
     : filter.dimension ? `${filter.dimension} findings`
       : filter.severity ? `${filter.severity}-severity findings` : ''
@@ -60,6 +84,11 @@ export default function PortfolioView({ data }) {
             {stats.orgCount} client orgs assessed. Click any metric, bar, cell or row to drill in.
           </p>
         </div>
+        <button className="btn" onClick={onDownload} disabled={!gated.length}
+                title={`Threshold-gated findings for the ${shownOrgs.length} orgs shown, `
+                  + 'in the scanner’s backlog column order'}>
+          ⬇ Download backlog CSV · {gated.length.toLocaleString()} tickets
+        </button>
       </div>
 
       <KpiRow stats={stats} filter={filter} onFilter={toggle} />

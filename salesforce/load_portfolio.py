@@ -7,6 +7,11 @@ job per object — fast even for a couple thousand findings.
     python3 salesforce/load_portfolio.py portfolio.json --target-org orgiq
 
 The portfolio JSON is {"scans": [ {scan, dimensions, findings}, ... ]}.
+
+Because every record is deleted and re-inserted, there is no finding lifecycle
+to reconcile here and nothing human to preserve — that is load_scan.py's job.
+Status__c is left to its picklist default (Open) so the two loaders agree on
+where a fresh finding starts.
 """
 
 import argparse
@@ -40,6 +45,13 @@ def b(v):
     return "true" if v else "false"
 
 
+def density_pct(ratio):
+    """Semantic_Density__c is a Percent(3,1) — Salesforce stores 42.5 for 42.5%
+    — while the scan JSON carries a 0..1 ratio. 99.9 is the field's ceiling, so
+    a perfectly dense corpus is clamped rather than failing the whole job."""
+    return min(round(float(ratio) * 100, 1), 99.9)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("portfolio_json")
@@ -71,8 +83,9 @@ def main():
     # 2) insert scans ------------------------------------------------------
     scan_cols = ["External_Scan_Id__c", "Target_Org__c", "Scan_Mode__c",
                  "Rubric_Version__c", "Composite_Score__c", "Readiness_Band__c",
-                 "Components_Scanned__c", "Gate_Applied__c", "Gate_Reason__c",
-                 "Scan_Timestamp__c"]
+                 "Components_Scanned__c", "Semantic_Density__c",
+                 "Est_Grounding_Tokens__c", "Est_Remediated_Tokens__c",
+                 "Gate_Applied__c", "Gate_Reason__c", "Scan_Timestamp__c"]
     write_csv(tmp / "scans.csv", scan_cols, [{
         "External_Scan_Id__c": s["scan"]["external_scan_id"],
         "Target_Org__c": s["scan"]["target_org"],
@@ -81,6 +94,9 @@ def main():
         "Composite_Score__c": s["scan"]["composite_score"],
         "Readiness_Band__c": s["scan"]["readiness_band"],
         "Components_Scanned__c": s["scan"]["components_scanned"],
+        "Semantic_Density__c": density_pct(s["scan"]["semantic_density"]),
+        "Est_Grounding_Tokens__c": s["scan"]["est_grounding_tokens"],
+        "Est_Remediated_Tokens__c": s["scan"]["est_remediated_tokens"],
         "Gate_Applied__c": b(s["scan"]["gate_applied"]),
         "Gate_Reason__c": s["scan"]["gate_reason"],
         "Scan_Timestamp__c": s["scan"]["scan_timestamp"],
@@ -95,11 +111,13 @@ def main():
     id_of = {r["External_Scan_Id__c"]: r["Id"] for r in recs}
 
     # 4) insert findings ---------------------------------------------------
+    # Status__c is omitted so the picklist default (Open) applies on insert,
+    # matching load_scan.py — see the module docstring.
     f_cols = ["External_Finding_Id__c", "Scan__c", "Rule_Id__c", "Dimension__c",
               "Severity__c", "Confidence__c", "Component_Type__c",
-              "Component_Api_Name__c", "Evidence__c", "Remediation__c",
-              "Effort_Points__c", "Blast_Radius__c", "Emits_To_Backlog__c",
-              "Rule_Maturity__c", "Status__c"]
+              "Component_Api_Name__c", "Evidence__c", "Epic__c", "Remediation__c",
+              "Acceptance_Criteria__c", "Effort_Points__c", "Blast_Radius__c",
+              "Source__c", "Emits_To_Backlog__c", "Rule_Maturity__c"]
     f_rows = []
     for s in scans:
         sid = id_of[s["scan"]["external_scan_id"]]
@@ -110,10 +128,12 @@ def main():
                 "Severity__c": f["severity"], "Confidence__c": f["confidence"],
                 "Component_Type__c": f["component_type"],
                 "Component_Api_Name__c": f["component_api_name"],
-                "Evidence__c": f["evidence"], "Remediation__c": f["remediation"],
+                "Evidence__c": f["evidence"], "Epic__c": f["epic"],
+                "Remediation__c": f["remediation"],
+                "Acceptance_Criteria__c": f["acceptance_criteria"],
                 "Effort_Points__c": f["effort_points"], "Blast_Radius__c": f["blast_radius"],
-                "Emits_To_Backlog__c": b(f["emits_to_backlog"]),
-                "Rule_Maturity__c": f["rule_maturity"], "Status__c": f["status"],
+                "Source__c": f["source"], "Emits_To_Backlog__c": b(f["emits_to_backlog"]),
+                "Rule_Maturity__c": f["rule_maturity"],
             })
     write_csv(tmp / "findings.csv", f_cols, f_rows)
     print(f"→ inserting {len(f_rows)} findings…")

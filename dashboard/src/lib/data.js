@@ -25,28 +25,142 @@ export function bandKey(band) { return BAND_META[band]?.key ?? 'not-ready' }
 
 export const SEVERITY_ORDER = ['Critical', 'High', 'Medium', 'Low']
 
+// Rule display metadata.
+//
+// `label` is dashboard-only. `epic` and `acceptance` are a MIRROR of
+// scanner/backlog.py `_PLAYBOOK` — that file is the source of truth, this is a
+// cache for findings exported before the org carried Epic__c /
+// Acceptance_Criteria__c. When a rule is added or its playbook wording changes
+// in backlog.py, update it here too, verbatim: a silent drift here shows up as
+// two different epic names for the same rule in the same backlog.
 export const RULE_META = {
-  'D1.MISSING_DESCRIPTION': { label: 'Missing description', epic: 'Add missing field descriptions' },
-  'D1.LOW_INFO_DESCRIPTION': { label: 'Label-restating description', epic: 'Replace label-restating descriptions' },
-  'D1.CRYPTIC_API_NAME': { label: 'Cryptic field name', epic: 'Clarify cryptic field names' },
-  'D1.NUMBERED_FAMILY': { label: 'Numbered field family', epic: 'Resolve numbered field families' },
-  'D1.SEMANTIC_DUPLICATE': { label: 'Duplicate field', epic: 'Consolidate duplicate fields' },
-  'D2.LOW_FILL_RATE': { label: 'Low fill rate', epic: 'Backfill under-populated fields' },
-  'D2.STALE_DATA': { label: 'Stale data', epic: 'Refresh stale data' },
-  'D2.DUPLICATE_RECORDS': { label: 'Duplicate records', epic: 'De-duplicate records' },
-  'D3.NO_SAFE_ACTIONS': { label: 'No safe actions', epic: 'Build a safe action surface' },
-  'D3.UNDOCUMENTED_ACTION': { label: 'Undocumented action', epic: 'Document invocable actions' },
-  'D3.APEX_NO_TESTS': { label: 'Untested Apex', epic: 'Cover agent-invoked Apex with tests' },
-  'D3.INACTIVE_ACTION': { label: 'Inactive flow', epic: 'Activate or retire dormant flows' },
-  'D4.MODIFY_ALL_DATA': { label: 'Modify All Data', epic: 'Remove Modify All Data from the agent' },
-  'D4.VIEW_ALL_DATA': { label: 'View All Data', epic: 'Remove View All Data from the agent' },
-  'D4.WIDE_OBJECT_ACCESS': { label: 'Over-broad access', epic: 'Tighten over-broad object access' },
-  'D4.DELETE_GRANTED': { label: 'Delete granted', epic: 'Remove unnecessary delete rights' },
-  'D5.DML_IN_LOOP': { label: 'DML in loop', epic: 'Bulkify automation' },
-  'D5.SOQL_IN_LOOP': { label: 'SOQL in loop', epic: 'Bulkify automation' },
-  'D5.MULTIPLE_TRIGGERS': { label: 'Multiple triggers', epic: 'Consolidate triggers per object' },
-  'D5.NO_RECURSION_GUARD': { label: 'No recursion guard', epic: 'Add recursion guards' },
-  'D5.TRIGGER_AND_FLOW': { label: 'Trigger + flow collision', epic: 'Resolve trigger/flow ordering collisions' },
+  'D1.MISSING_DESCRIPTION': {
+    label: 'Missing description',
+    epic: 'Add missing field descriptions',
+    acceptance: 'Field has a non-empty description that states its business meaning '
+      + '(not just a restatement of the label). Re-scan reports no '
+      + 'D1.MISSING_DESCRIPTION for this field.',
+  },
+  'D1.LOW_INFO_DESCRIPTION': {
+    label: 'Label-restating description',
+    epic: 'Replace label-restating field descriptions',
+    acceptance: 'Description carries information beyond the label. Re-scan reports no '
+      + 'D1.LOW_INFO_DESCRIPTION for this field.',
+  },
+  'D1.CRYPTIC_API_NAME': {
+    label: 'Cryptic field name',
+    epic: 'Clarify cryptic field names',
+    acceptance: 'Field is unambiguous to a reader with no tribal knowledge — via a clear '
+      + 'description and/or a readable API name. Re-scan reports no '
+      + 'D1.CRYPTIC_API_NAME for this field.',
+  },
+  'D1.NUMBERED_FAMILY': {
+    label: 'Numbered field family',
+    epic: 'Resolve numbered field families',
+    acceptance: 'Either the group is modelled as a related list, or each member carries a '
+      + 'distinct, disambiguating description. Re-scan reports no '
+      + 'D1.NUMBERED_FAMILY for this object, or a smaller family.',
+  },
+  'D1.SEMANTIC_DUPLICATE': {
+    label: 'Duplicate field',
+    epic: 'Consolidate duplicate fields',
+    acceptance: 'One canonical field remains; duplicates are deprecated with data and '
+      + 'references migrated. Re-scan reports no D1.SEMANTIC_DUPLICATE for this cluster.',
+  },
+  'D1.UNREFERENCED_FIELD': {
+    label: 'Unreferenced field',
+    epic: 'Retire unreferenced fields',
+    acceptance: "Field is deleted, or retained with a documented reason and hidden from the "
+      + "agent's layouts and permissions. Absence of references was verified against "
+      + 'integrations and managed packages, not just the committed report metadata. '
+      + 'Re-scan reports no D1.UNREFERENCED_FIELD for this field.',
+  },
+  'D2.LOW_FILL_RATE': {
+    label: 'Low fill rate',
+    epic: 'Backfill under-populated fields',
+    acceptance: 'Fill rate on the field exceeds the grounding threshold; re-scan clears the finding.',
+  },
+  'D2.STALE_DATA': {
+    label: 'Stale data',
+    epic: 'Refresh stale data',
+    acceptance: 'Stale-record ratio falls below threshold; re-scan clears the finding.',
+  },
+  'D2.DUPLICATE_RECORDS': {
+    label: 'Duplicate records',
+    epic: 'De-duplicate records',
+    acceptance: 'Duplicate rate below threshold; re-scan clears the finding.',
+  },
+  'D3.NO_SAFE_ACTIONS': {
+    label: 'No safe actions',
+    epic: 'Build a safe action surface',
+    acceptance: 'At least one bulk-safe invocable action exists per intended task; re-scan clears the finding.',
+  },
+  'D3.UNDOCUMENTED_ACTION': {
+    label: 'Undocumented action',
+    epic: 'Document invocable actions',
+    acceptance: 'Action carries a planner-usable description; re-scan clears the finding.',
+  },
+  'D3.APEX_NO_TESTS': {
+    label: 'Untested Apex',
+    epic: 'Cover agent-invoked Apex with tests',
+    acceptance: 'Class has meaningful test coverage; re-scan clears the finding.',
+  },
+  'D3.INACTIVE_ACTION': {
+    label: 'Inactive flow',
+    epic: 'Activate or retire dormant flows',
+    acceptance: 'No Draft/Obsolete flow is exposed as an agent action; re-scan clears it.',
+  },
+  'D4.MODIFY_ALL_DATA': {
+    label: 'Modify All Data',
+    epic: 'Remove Modify All Data from the agent',
+    acceptance: 'Agent permission set no longer grants Modify All Data; re-scan clears the finding.',
+  },
+  'D4.VIEW_ALL_DATA': {
+    label: 'View All Data',
+    epic: 'Remove View All Data from the agent',
+    acceptance: 'Agent permission set no longer grants View All Data; re-scan clears the finding.',
+  },
+  'D4.WIDE_OBJECT_ACCESS': {
+    label: 'Over-broad access',
+    epic: 'Tighten over-broad object access',
+    acceptance: 'Object access matches task scope; re-scan clears the finding.',
+  },
+  'D4.DELETE_GRANTED': {
+    label: 'Delete granted',
+    epic: 'Remove unnecessary delete rights',
+    acceptance: 'Delete is granted only where a task requires it; re-scan clears it.',
+  },
+  'D5.DML_IN_LOOP': {
+    label: 'DML in loop',
+    epic: 'Bulkify automation',
+    acceptance: 'No DML in loops on the automation path; bulk tests pass; re-scan clears the finding.',
+  },
+  'D5.SOQL_IN_LOOP': {
+    label: 'SOQL in loop',
+    epic: 'Bulkify automation',
+    acceptance: 'No SOQL inside loops on the automation path; re-scan clears it.',
+  },
+  'D5.MULTIPLE_TRIGGERS': {
+    label: 'Multiple triggers',
+    epic: 'Consolidate triggers per object',
+    acceptance: 'One trigger per object with defined order; re-scan clears the finding.',
+  },
+  'D5.NO_RECURSION_GUARD': {
+    label: 'No recursion guard',
+    epic: 'Add recursion guards',
+    acceptance: 'Automation is recursion-safe; re-scan clears the finding.',
+  },
+  'D5.TRIGGER_AND_FLOW': {
+    label: 'Trigger + flow collision',
+    epic: 'Resolve trigger/flow ordering collisions',
+    acceptance: 'One deterministic automation path per object; re-scan clears it.',
+  },
+}
+// Mirrors backlog._UNKNOWN — a rule the dashboard build predates still needs an
+// epic and an acceptance line, or its ticket imports without either.
+const UNKNOWN_RULE = {
+  epic: 'Grounding quality findings',
+  acceptance: 'Re-scan no longer reports this finding for the component.',
 }
 export function ruleLabel(ruleId) { return RULE_META[ruleId]?.label ?? ruleId }
 
@@ -201,7 +315,9 @@ export function backlogSummary(findings) {
   const gated = findings.filter((f) => f.emitsToBacklog)
   const byEpic = {}
   for (const f of gated) {
-    const epic = RULE_META[f.ruleId]?.epic ?? f.ruleId
+    // The finding's own epic when the export carries one, so the summary and
+    // the downloaded CSV never disagree about which epic a ticket belongs to.
+    const epic = f.epic || RULE_META[f.ruleId]?.epic || f.ruleId
     if (!byEpic[epic]) byEpic[epic] = { epic, count: 0, effort: 0 }
     byEpic[epic].count += 1
     byEpic[epic].effort += f.effortPoints || 0
@@ -243,22 +359,125 @@ export function familyOf(scans, scan) {
   return members.length > 1 ? { base, members } : null
 }
 
-// ---- backlog CSV (client-side download; mirrors scanner/backlog.py columns) ----
+// ---- backlog CSV -------------------------------------------------------
+//
+// This is the Jira import file a stakeholder downloads from the dashboard, so
+// it has to BE the scanner's file, not a lookalike: same columns, same order,
+// same header strings, same row shaping as scanner/backlog.py. Anything else
+// and the demo hands out a spreadsheet that Jira's importer cannot map.
+// Keep this block and backlog.py in lockstep.
+
+// Verbatim from backlog.BACKLOG_COLUMNS.
+const BACKLOG_COLUMNS = [
+  'External ID',
+  'Issue Type',
+  'Epic Name',
+  'Summary',
+  'Priority',
+  'Story Points (provisional)',
+  'Labels',
+  'Salesforce Component',
+  'Component Type',
+  'Rule ID',
+  'Dimension',
+  'Severity',
+  'Confidence',
+  'Rule Maturity',
+  'Source',
+  'Description',
+]
+
+// backlog._PRIORITY / _SEV_RANK / _CONF_RANK / FINDING_SOURCE.
+const JIRA_PRIORITY = { Critical: 'Highest', High: 'High', Medium: 'Medium', Low: 'Low' }
+const SEV_RANK = { Critical: 4, High: 3, Medium: 2, Low: 1 }
+const CONF_RANK = { High: 3, Medium: 2, Low: 1 }
+const DEFAULT_FINDING_SOURCE = 'OrgIQ'
+
+// Python compares strings by code point; localeCompare does not, and the row
+// order is part of matching the scanner's output.
+function cmp(a, b) { return a < b ? -1 : a > b ? 1 : 0 }
+
+function componentTypeOf(f) {
+  // Prefer the stored value; fall back to backlog._component_type's rule
+  // (aggregate findings render as "Object [N fields]").
+  return f.componentType || (f.component.includes('[') ? 'CustomField group' : 'CustomField')
+}
+
+function backlogDescription(scan, f) {
+  const meta = RULE_META[f.ruleId] ?? UNKNOWN_RULE
+  // The exported finding carries the org's own epic/acceptance/source once the
+  // scan has been loaded into Salesforce; RULE_META covers older exports.
+  const acceptance = f.acceptanceCriteria || meta.acceptance
+  return [
+    `Rule: ${f.ruleId} (${f.dimension} — Grounding Quality)`,
+    `Severity: ${f.severity}   Confidence: ${f.confidence}`,
+    `Component: ${f.component}  [${componentTypeOf(f)}]`,
+    '',
+    // backlog.py emits a separate "Detail:" line; by the time a finding reaches
+    // the dashboard its detail is already folded into evidence ("ev — detail"),
+    // so there is nothing left to break out.
+    `Evidence: ${f.evidence}`,
+    '',
+    'Remediation:',
+    f.remediation || '',
+    '',
+    `Acceptance criteria: ${acceptance}`,
+    '',
+    'Blast radius: n/a (source mode — no dependency graph)',
+    `Scan source: ${scan.targetOrg}`,
+    `Finding source: ${f.source || DEFAULT_FINDING_SOURCE}`,
+    'Effort points are PROVISIONAL (uncalibrated, PRD §8/§11).',
+  ].join('\n')
+}
+
+// Keyed by column name, then emitted in BACKLOG_COLUMNS order — the same
+// DictWriter shape backlog.to_rows uses, so a column can never silently drift
+// out of position the way a positional array lets it.
+function backlogRow(scan, f) {
+  const meta = RULE_META[f.ruleId] ?? UNKNOWN_RULE
+  return {
+    'External ID': f.externalId,
+    'Issue Type': 'Task',
+    'Epic Name': f.epic || meta.epic,
+    Summary: `[${f.ruleId}] ${f.component}: ${f.evidence}`.slice(0, 200),
+    Priority: JIRA_PRIORITY[f.severity] ?? 'Medium',
+    'Story Points (provisional)': f.effortPoints,
+    Labels: `OrgIQ ${f.dimension} ${f.ruleId.replace(/\./g, '_')}`,
+    'Salesforce Component': f.component,
+    'Component Type': componentTypeOf(f),
+    'Rule ID': f.ruleId,
+    Dimension: f.dimension,
+    Severity: f.severity,
+    Confidence: f.confidence,
+    'Rule Maturity': f.ruleMaturity || 'experimental',
+    Source: f.source || DEFAULT_FINDING_SOURCE,
+    Description: backlogDescription(scan, f),
+  }
+}
+
+// QUOTE_MINIMAL, matching Python's csv writer.
 function csvCell(v) {
   const s = String(v ?? '')
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
+
 export function backlogCsv(scan, findings) {
-  const cols = ['External ID', 'Rule', 'Severity', 'Confidence', 'Component',
-    'Evidence', 'Effort (provisional)', 'Emits To Backlog', 'Remediation']
-  const lines = [cols.join(',')]
-  for (const f of findings) {
-    lines.push([
-      f.externalId, f.ruleId, f.severity, f.confidence, f.component,
-      f.evidence, f.effortPoints, f.emitsToBacklog ? 'yes' : 'no', f.remediation,
-    ].map(csvCell).join(','))
-  }
-  return lines.join('\n')
+  const rows = findings
+    // The §4.6 gate again, in case a caller hands us everything: an observation
+    // that failed the gate must never arrive as a ticket.
+    .filter((f) => f.emitsToBacklog)
+    .sort((a, b) => (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0)
+      || (CONF_RANK[b.confidence] ?? 0) - (CONF_RANK[a.confidence] ?? 0)
+      || cmp(a.ruleId, b.ruleId)
+      || cmp(a.component, b.component))
+    .map((f) => {
+      const row = backlogRow(scan, f)
+      return BACKLOG_COLUMNS.map((c) => csvCell(row[c])).join(',')
+    })
+  // CRLF-terminated rows, trailing terminator included (the Description cell
+  // keeps its own bare newlines inside the quotes) — RFC 4180, and byte-for-byte
+  // what Python's csv writer produces.
+  return [BACKLOG_COLUMNS.join(','), ...rows].map((r) => `${r}\r\n`).join('')
 }
 export function downloadCsv(filename, text) {
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8' })

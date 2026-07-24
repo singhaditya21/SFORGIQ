@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Epic__c</fullName>
+    <description>Rule-level epic this finding rolls up to. Same value as the Epic Name column in the Jira backlog export, so a re-import lands in the same epic.</description>
+    <inlineHelpText>Rule-level epic this finding rolls up to. Same value as the Epic Name column in the Jira backlog export, so a re-import lands in the same epic.</inlineHelpText>
+    <label>Epic</label>
+    <length>255</length>
+    <type>Text</type>
+</CustomField>

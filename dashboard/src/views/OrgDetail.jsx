@@ -16,6 +16,16 @@ export default function OrgDetail({ data, scan }) {
   const dateLabel = isNaN(scanDate) ? s.timestamp
     : scanDate.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
+  // Grounding cost (PRD §5.3). Deterministic estimates from the scanner, so
+  // every number here is labelled as one. A scan exported before these fields
+  // existed shows nothing rather than a zero that would read as measured.
+  const density = s.semanticDensity          // 0-1 share, not a percent
+  const curTokens = s.estGroundingTokens
+  const remTokens = s.estRemediatedTokens
+  const hasTokens = curTokens != null && remTokens != null && curTokens > 0
+  const savedTokens = hasTokens ? Math.max(0, curTokens - remTokens) : 0
+  const savedPct = hasTokens ? Math.round((savedTokens / curTokens) * 100) : 0
+
   const onDownload = () => {
     const gated = findings.filter((f) => f.emitsToBacklog)
     const safe = s.externalId.replace(/[^A-Za-z0-9_-]+/g, '_')
@@ -80,6 +90,61 @@ export default function OrgDetail({ data, scan }) {
             <ComponentRollup rollup={rollup} />
           </section>
         )}
+        {(hasTokens || density != null) && (
+          // Spans the hole the "Debt by object" card leaves when there is no
+          // family trend, so the row still fills exactly (see .grid in index.css).
+          <section className={family ? 'card' : 'card card--wide'}>
+            <div className="card__head">
+              <h2 className="card__title">Grounding cost</h2>
+              <span className="card__hint">deterministic estimates · not a model tokenizer</span>
+            </div>
+
+            <div className="backlog__stats">
+              {density != null && (
+                <div className="stat"
+                     title="Share of description text that adds information beyond the label and API name.">
+                  <div className="stat__num">{(density * 100).toFixed(1)}%</div>
+                  <div className="stat__label">
+                    semantic density<span className="stat__prov"> · est.</span>
+                  </div>
+                </div>
+              )}
+              {hasTokens && (
+                <>
+                  <div className="stat"
+                       title="Tokens an agent retrieves for these fields today (API name + label + description).">
+                    <div className="stat__num">{curTokens.toLocaleString()}</div>
+                    <div className="stat__label">
+                      tokens retrieved today<span className="stat__prov"> · est.</span>
+                    </div>
+                  </div>
+                  <div className="stat"
+                       title="Same fields once low-information descriptions are dropped and duplicates collapse.">
+                    <div className="stat__num">{remTokens.toLocaleString()}</div>
+                    <div className="stat__label">
+                      tokens after remediation<span className="stat__prov"> · est.</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {hasTokens && (
+              <div className="epic">
+                <div className="epic__top">
+                  <span className="epic__name">Estimated reduction</span>
+                  <span className="epic__nums">
+                    −{savedTokens.toLocaleString()} tokens · {savedPct}%
+                  </span>
+                </div>
+                <div className="epic__bar">
+                  <div className="epic__fill" style={{ width: `${Math.min(100, savedPct)}%` }} />
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
         <FindingsTable findings={findings} />
       </main>
     </>

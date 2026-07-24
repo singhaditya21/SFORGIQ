@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Why this file exists: the dashboard's PKCE token exchange runs in the browser
+    from the GitHub Pages origin, so it POSTs to /services/oauth2/token from a
+    cross-origin page. CorsWhitelistOrigin only covers the REST API — the OAuth
+    endpoints are gated separately by this switch.
+
+    Note the failure mode precisely: this is a CORS-*simple* request (POST,
+    form-urlencoded, no custom headers), so there is no preflight. The browser
+    sends it, Salesforce processes it and consumes the single-use auth code, and
+    only the missing Access-Control-Allow-Origin on the response makes fetch()
+    reject. That is why "Connect to Salesforce" failed and why retrying without
+    a fresh sign-in could never work.
+
+    Kept deliberately minimal: settings deploys merge, so listing only the one
+    element we change means this cannot clobber password policies, session
+    timeouts, trusted IP ranges or anything else under SecuritySettings.
+-->
+<SecuritySettings xmlns="http://soap.sforce.com/2006/04/metadata">
+    <sessionSettings>
+        <enableOauthCorsPolicy>true</enableOauthCorsPolicy>
+    </sessionSettings>
+</SecuritySettings>

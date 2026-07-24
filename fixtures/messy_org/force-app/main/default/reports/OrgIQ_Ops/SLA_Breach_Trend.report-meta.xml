@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>SLA Breach Trend</name>
+    <reportType>Service_Order__c</reportType>
+    <format>Summary</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Service_Order__c.SLA_Breached__c</field>
+    </columns>
+    <columns>
+        <field>Service_Order__c.Provisioning_Status__c</field>
+    </columns>
+    <columns>
+        <field>Service_Order__c.Service_Code__c</field>
+    </columns>
+    <groupingsDown>
+        <dateGranularity>Month</dateGranularity>
+        <field>Service_Order__c.Ordered_On__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <filter>
+        <criteriaItems>
+            <column>Service_Order__c.SLA_Breached__c</column>
+            <operator>equals</operator>
+            <value>true</value>
+        </criteriaItems>
+    </filter>
+</Report>

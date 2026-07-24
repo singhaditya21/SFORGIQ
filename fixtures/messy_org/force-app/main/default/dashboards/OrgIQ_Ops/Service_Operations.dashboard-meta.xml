@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Dashboard xmlns="http://soap.sforce.com/2006/04/metadata">
+    <title>Service Operations</title>
+    <dashboardType>LoggedInUser</dashboardType>
+    <backgroundEndColor>#FFFFFF</backgroundEndColor>
+    <backgroundFadeDirection>Diagonal</backgroundFadeDirection>
+    <backgroundStartColor>#FFFFFF</backgroundStartColor>
+    <textColor>#000000</textColor>
+    <titleColor>#000000</titleColor>
+    <titleSize>12</titleSize>
+    <leftSection>
+        <columnSize>Medium</columnSize>
+        <components>
+            <componentType>Donut</componentType>
+            <header>Orders by provisioning status</header>
+            <groupingColumn>Service_Order__c.Provisioning_Status__c</groupingColumn>
+            <dashboardFilterColumns>
+                <column>Service_Order__c.Order_Type__c</column>
+            </dashboardFilterColumns>
+            <report>OrgIQ_Ops/Service_Orders_by_Status</report>
+        </components>
+    </leftSection>
+    <rightSection>
+        <columnSize>Medium</columnSize>
+        <components>
+            <componentType>Metric</componentType>
+            <header>SLA breaches this month</header>
+            <dashboardTableColumn>
+                <column>Service_Order__c.SLA_Breached__c</column>
+            </dashboardTableColumn>
+            <report>OrgIQ_Ops/SLA_Breach_Trend</report>
+        </components>
+    </rightSection>
+</Dashboard>

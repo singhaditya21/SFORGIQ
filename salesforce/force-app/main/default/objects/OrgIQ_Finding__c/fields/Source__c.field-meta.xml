@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Source__c</fullName>
+    <description>Which tool reported this finding. Restricted so findings imported from Optimizer, Health Check or Code Analyzer can share this backlog without diluting OrgIQ's own rule provenance.</description>
+    <inlineHelpText>Which tool reported this finding. Restricted so findings imported from Optimizer, Health Check or Code Analyzer can share this backlog without diluting OrgIQ's own rule provenance.</inlineHelpText>
+    <label>Source</label>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>OrgIQ</fullName>
+                <default>true</default>
+                <label>OrgIQ</label>
+            </value>
+            <value>
+                <fullName>Optimizer</fullName>
+                <default>false</default>
+                <label>Optimizer</label>
+            </value>
+            <value>
+                <fullName>Health Check</fullName>
+                <default>false</default>
+                <label>Health Check</label>
+            </value>
+            <value>
+                <fullName>Code Analyzer</fullName>
+                <default>false</default>
+                <label>Code Analyzer</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

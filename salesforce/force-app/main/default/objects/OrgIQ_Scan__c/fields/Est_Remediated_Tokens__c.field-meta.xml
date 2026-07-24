@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Est_Remediated_Tokens__c</fullName>
+    <description>Estimated tokens for the same fields once low-information descriptions are dropped and duplicates collapse. Compare against Est Grounding Tokens to size the win.</description>
+    <inlineHelpText>Estimated tokens for the same fields once low-information descriptions are dropped and duplicates collapse. Compare against Est Grounding Tokens to size the win.</inlineHelpText>
+    <label>Est Remediated Tokens</label>
+    <precision>18</precision>
+    <scale>0</scale>
+    <type>Number</type>
+</CustomField>

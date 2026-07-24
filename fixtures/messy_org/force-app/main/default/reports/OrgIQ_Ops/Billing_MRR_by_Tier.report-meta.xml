@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>MRR by Customer Tier</name>
+    <reportType>Billing_Account__c</reportType>
+    <format>Summary</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Billing_Account__c.MRR__c</field>
+        <aggregateTypes>Sum</aggregateTypes>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.ARR__c</field>
+        <aggregateTypes>Sum</aggregateTypes>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.Credit_Balance__c</field>
+    </columns>
+    <groupingsDown>
+        <field>Billing_Account__c.Customer_Tier__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <filter>
+        <criteriaItems>
+            <column>Billing_Account__c.Account_Status__c</column>
+            <operator>equals</operator>
+            <value>Active</value>
+        </criteriaItems>
+    </filter>
+    <chart>
+        <chartSummaries>
+            <aggregate>Sum</aggregate>
+            <axisBinding>y</axisBinding>
+            <column>Billing_Account__c.MRR__c</column>
+        </chartSummaries>
+        <chartType>VerticalColumn</chartType>
+        <groupingColumn>Billing_Account__c.Customer_Tier__c</groupingColumn>
+        <size>Medium</size>
+    </chart>
+</Report>

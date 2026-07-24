@@ -11,10 +11,14 @@ families, and semantic duplicates.
 
     python3 fixtures/gen_messy_org.py --out fixtures/messy_org/force-app
 
-Writes CustomObject + CustomField metadata under <out>/main/default/objects.
+Writes CustomObject + CustomField metadata under <out>/main/default/objects,
+plus Flow/Apex/trigger/permission-set material for D3–D5 and a reports/ +
+dashboards/ folder that makes some fields provably in use and others provably
+dead.
 """
 
 import argparse
+import re
 from pathlib import Path
 
 # (api_name, label, type, description)  — description "" means missing.
@@ -218,6 +222,377 @@ PERMISSION_SETS = {
 }
 
 
+# --- report/dashboard material: evidence of what the org actually LOOKS at ---
+# Reports are the cheapest proof a field is load-bearing, so the split here is
+# deliberate rather than incidental:
+#   * MRR__c is pulled by more report/dashboard files than any other field, yet
+#     carries no description — load-bearing AND unexplained, the worst
+#     combination there is for an agent trying to ground itself.
+#   * every cryptic twin of a semantic duplicate (Cust_Tier__c, Svc_Cd__c,
+#     Email_Addr__c, Seg__c) and the tail of every numbered family
+#     (Contact2/3, Tech2, Acct2/3/4) is referenced by NO report, so an
+#     unreferenced-field rule has genuine positives instead of an empty set.
+# Field names use the Object.Field form that ReportRefs keys on. Salesforce also
+# emits Object$Field inside custom report types, but mixing both here would make
+# the expected counts depend on which separators the parser happens to handle.
+
+REPORTS = {
+    # columns + filter + grouping + chart, all on Billing_Account__c
+    "Billing_MRR_by_Tier": """<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>MRR by Customer Tier</name>
+    <reportType>Billing_Account__c</reportType>
+    <format>Summary</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Billing_Account__c.MRR__c</field>
+        <aggregateTypes>Sum</aggregateTypes>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.ARR__c</field>
+        <aggregateTypes>Sum</aggregateTypes>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.Credit_Balance__c</field>
+    </columns>
+    <groupingsDown>
+        <field>Billing_Account__c.Customer_Tier__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <filter>
+        <criteriaItems>
+            <column>Billing_Account__c.Account_Status__c</column>
+            <operator>equals</operator>
+            <value>Active</value>
+        </criteriaItems>
+    </filter>
+    <chart>
+        <chartSummaries>
+            <aggregate>Sum</aggregate>
+            <axisBinding>y</axisBinding>
+            <column>Billing_Account__c.MRR__c</column>
+        </chartSummaries>
+        <chartType>VerticalColumn</chartType>
+        <groupingColumn>Billing_Account__c.Customer_Tier__c</groupingColumn>
+        <size>Medium</size>
+    </chart>
+</Report>
+""",
+    # tabular: the collections team's daily worklist
+    "Billing_Dunning_Watchlist": """<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>Dunning Watchlist</name>
+    <reportType>Billing_Account__c</reportType>
+    <format>Tabular</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Billing_Account__c.Account_Status__c</field>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.Dunning_Flag__c</field>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.Credit_Balance__c</field>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.MRR__c</field>
+        <aggregateTypes>Sum</aggregateTypes>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.Billing_Cycle_Day__c</field>
+    </columns>
+    <filter>
+        <criteriaItems>
+            <column>Billing_Account__c.Dunning_Flag__c</column>
+            <operator>equals</operator>
+            <value>true</value>
+        </criteriaItems>
+    </filter>
+</Report>
+""",
+    # grouped on a checkbox; touches Contact1 but never Contact2/3
+    "Autopay_Adoption": """<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>Autopay Adoption</name>
+    <reportType>Billing_Account__c</reportType>
+    <format>Summary</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Billing_Account__c.MRR__c</field>
+        <aggregateTypes>Sum</aggregateTypes>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.Contact1_Email__c</field>
+    </columns>
+    <groupingsDown>
+        <field>Billing_Account__c.Auto_Pay_Enrolled__c</field>
+        <sortOrder>Desc</sortOrder>
+    </groupingsDown>
+    <filter>
+        <criteriaItems>
+            <column>Billing_Account__c.Account_Status__c</column>
+            <operator>notEqual</operator>
+            <value>Closed</value>
+        </criteriaItems>
+    </filter>
+</Report>
+""",
+    # matrix: grouping down AND across
+    "Service_Orders_by_Status": """<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>Service Orders by Status</name>
+    <reportType>Service_Order__c</reportType>
+    <format>Matrix</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Service_Order__c.Ordered_On__c</field>
+    </columns>
+    <columns>
+        <field>Service_Order__c.Activated_On__c</field>
+    </columns>
+    <columns>
+        <field>Service_Order__c.Service_Code__c</field>
+    </columns>
+    <columns>
+        <field>Service_Order__c.Tech1_Assigned__c</field>
+    </columns>
+    <groupingsDown>
+        <field>Service_Order__c.Provisioning_Status__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <groupingsAcross>
+        <field>Service_Order__c.Order_Type__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsAcross>
+</Report>
+""",
+    # date grouping — the field appears as a grouping, not a column
+    "SLA_Breach_Trend": """<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>SLA Breach Trend</name>
+    <reportType>Service_Order__c</reportType>
+    <format>Summary</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Service_Order__c.SLA_Breached__c</field>
+    </columns>
+    <columns>
+        <field>Service_Order__c.Provisioning_Status__c</field>
+    </columns>
+    <columns>
+        <field>Service_Order__c.Service_Code__c</field>
+    </columns>
+    <groupingsDown>
+        <dateGranularity>Month</dateGranularity>
+        <field>Service_Order__c.Ordered_On__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <filter>
+        <criteriaItems>
+            <column>Service_Order__c.SLA_Breached__c</column>
+            <operator>equals</operator>
+            <value>true</value>
+        </criteriaItems>
+    </filter>
+</Report>
+""",
+    # the only Legacy_Customer__c report — it uses the documented twin of each
+    # duplicate pair and Acct1 only, leaving the rest of that object dead
+    "Customer_Segment_Coverage": """<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>Customer Segment Coverage</name>
+    <reportType>Legacy_Customer__c</reportType>
+    <format>Summary</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Legacy_Customer__c.Full_Name__c</field>
+    </columns>
+    <columns>
+        <field>Legacy_Customer__c.Email_Address__c</field>
+    </columns>
+    <columns>
+        <field>Legacy_Customer__c.Last_Verified__c</field>
+    </columns>
+    <columns>
+        <field>Legacy_Customer__c.Acct1_Ref__c</field>
+    </columns>
+    <columns>
+        <field>Legacy_Customer__c.Do_Not_Call__c</field>
+    </columns>
+    <groupingsDown>
+        <field>Legacy_Customer__c.Segment__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <filter>
+        <criteriaItems>
+            <column>Legacy_Customer__c.Do_Not_Call__c</column>
+            <operator>equals</operator>
+            <value>false</value>
+        </criteriaItems>
+    </filter>
+</Report>
+""",
+    # the exec view — another vote for MRR/ARR/Customer_Tier
+    "Revenue_Exec_Summary": """<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>Revenue Exec Summary</name>
+    <reportType>Billing_Account__c</reportType>
+    <format>Summary</format>
+    <scope>organization</scope>
+    <columns>
+        <field>Billing_Account__c.MRR__c</field>
+        <aggregateTypes>Sum</aggregateTypes>
+    </columns>
+    <columns>
+        <field>Billing_Account__c.ARR__c</field>
+        <aggregateTypes>Sum</aggregateTypes>
+    </columns>
+    <groupingsDown>
+        <field>Billing_Account__c.Customer_Tier__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+</Report>
+""",
+}
+
+DASHBOARDS = {
+    # references fields through component bindings, not through <columns>
+    "Revenue_Health": """<?xml version="1.0" encoding="UTF-8"?>
+<Dashboard xmlns="http://soap.sforce.com/2006/04/metadata">
+    <title>Revenue Health</title>
+    <dashboardType>LoggedInUser</dashboardType>
+    <backgroundEndColor>#FFFFFF</backgroundEndColor>
+    <backgroundFadeDirection>Diagonal</backgroundFadeDirection>
+    <backgroundStartColor>#FFFFFF</backgroundStartColor>
+    <textColor>#000000</textColor>
+    <titleColor>#000000</titleColor>
+    <titleSize>12</titleSize>
+    <leftSection>
+        <columnSize>Medium</columnSize>
+        <components>
+            <componentType>Bar</componentType>
+            <header>MRR by tier</header>
+            <groupingColumn>Billing_Account__c.Customer_Tier__c</groupingColumn>
+            <dashboardFilterColumns>
+                <column>Billing_Account__c.Account_Status__c</column>
+            </dashboardFilterColumns>
+            <legendPosition>Right</legendPosition>
+            <report>OrgIQ_Ops/Billing_MRR_by_Tier</report>
+        </components>
+    </leftSection>
+    <middleSection>
+        <columnSize>Medium</columnSize>
+        <components>
+            <componentType>Table</componentType>
+            <header>Top accounts</header>
+            <dashboardTableColumn>
+                <column>Billing_Account__c.MRR__c</column>
+                <sortBy>ColumnDescending</sortBy>
+            </dashboardTableColumn>
+            <dashboardTableColumn>
+                <column>Billing_Account__c.ARR__c</column>
+            </dashboardTableColumn>
+            <report>OrgIQ_Ops/Revenue_Exec_Summary</report>
+        </components>
+    </middleSection>
+</Dashboard>
+""",
+    "Service_Operations": """<?xml version="1.0" encoding="UTF-8"?>
+<Dashboard xmlns="http://soap.sforce.com/2006/04/metadata">
+    <title>Service Operations</title>
+    <dashboardType>LoggedInUser</dashboardType>
+    <backgroundEndColor>#FFFFFF</backgroundEndColor>
+    <backgroundFadeDirection>Diagonal</backgroundFadeDirection>
+    <backgroundStartColor>#FFFFFF</backgroundStartColor>
+    <textColor>#000000</textColor>
+    <titleColor>#000000</titleColor>
+    <titleSize>12</titleSize>
+    <leftSection>
+        <columnSize>Medium</columnSize>
+        <components>
+            <componentType>Donut</componentType>
+            <header>Orders by provisioning status</header>
+            <groupingColumn>Service_Order__c.Provisioning_Status__c</groupingColumn>
+            <dashboardFilterColumns>
+                <column>Service_Order__c.Order_Type__c</column>
+            </dashboardFilterColumns>
+            <report>OrgIQ_Ops/Service_Orders_by_Status</report>
+        </components>
+    </leftSection>
+    <rightSection>
+        <columnSize>Medium</columnSize>
+        <components>
+            <componentType>Metric</componentType>
+            <header>SLA breaches this month</header>
+            <dashboardTableColumn>
+                <column>Service_Order__c.SLA_Breached__c</column>
+            </dashboardTableColumn>
+            <report>OrgIQ_Ops/SLA_Breach_Trend</report>
+        </components>
+    </rightSection>
+</Dashboard>
+""",
+}
+
+# Reports and dashboards live inside a folder in a real SFDX tree; the folder
+# metadata sits beside the directory and must NOT be mistaken for a report.
+REPORT_FOLDER_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<ReportFolder xmlns="http://soap.sforce.com/2006/04/metadata">
+    <accessType>Public</accessType>
+    <name>OrgIQ Ops</name>
+    <publicFolderAccess>ReadWrite</publicFolderAccess>
+</ReportFolder>
+"""
+
+DASHBOARD_FOLDER_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<DashboardFolder xmlns="http://soap.sforce.com/2006/04/metadata">
+    <accessType>Public</accessType>
+    <name>OrgIQ Ops</name>
+    <publicFolderAccess>ReadWrite</publicFolderAccess>
+</DashboardFolder>
+"""
+
+FOLDER = "OrgIQ_Ops"
+
+_REF_RE = re.compile(r"\b(\w+__c)\.(\w+__c)\b")
+
+
+def _ref_counts() -> dict:
+    """Object.Field -> number of report/dashboard FILES that reference it.
+
+    Derived from the XML above rather than hand-maintained, so the summary the
+    generator prints can never drift from what it actually wrote. Raises if a
+    report points at a field the fixture does not define — a silent typo would
+    turn a "load-bearing" field into a false unreferenced positive.
+    """
+    counts = {}
+    for xml in list(REPORTS.values()) + list(DASHBOARDS.values()):
+        for ref in sorted({f"{obj}.{fld}" for obj, fld in _REF_RE.findall(xml)}):
+            counts[ref] = counts.get(ref, 0) + 1
+    known = {f"{obj}.{fld[0]}" for obj, (_, flds) in OBJECTS.items() for fld in flds}
+    unknown = sorted(set(counts) - known)
+    if unknown:
+        raise SystemExit(f"fixture reports reference undefined fields: {unknown}")
+    return counts
+
+
+def _write_reports(base: Path) -> tuple:
+    """Write the report/dashboard folders. Returns (n_reports, n_dashboards)."""
+    rdir = base / "reports"
+    (rdir / FOLDER).mkdir(parents=True, exist_ok=True)
+    (rdir / f"{FOLDER}.reportFolder-meta.xml").write_text(REPORT_FOLDER_XML)
+    for name, xml in REPORTS.items():
+        (rdir / FOLDER / f"{name}.report-meta.xml").write_text(xml)
+
+    ddir = base / "dashboards"
+    (ddir / FOLDER).mkdir(parents=True, exist_ok=True)
+    (ddir / f"{FOLDER}.dashboardFolder-meta.xml").write_text(DASHBOARD_FOLDER_XML)
+    for name, xml in DASHBOARDS.items():
+        (ddir / FOLDER / f"{name}.dashboard-meta.xml").write_text(xml)
+
+    return len(REPORTS), len(DASHBOARDS)
+
+
 def _write_extras(base: Path) -> int:
     """Write the Flow/Apex/trigger/permission-set files. Returns file count."""
     n = 0
@@ -254,9 +629,18 @@ def main():
                 FIELD_XML.format(api=api, label=_esc(flabel), type=ftype, desc=desc_xml))
             n_fld += 1
 
-    n_extra = _write_extras(Path(a.out) / "main" / "default")
+    default = Path(a.out) / "main" / "default"
+    n_extra = _write_extras(default)
+    n_rep, n_dash = _write_reports(default)
+
+    counts = _ref_counts()
+    # tie-break on name so the "load-bearing" field named here is stable
+    top, top_n = max(counts.items(), key=lambda kv: (kv[1], kv[0]))
     print(f"wrote {n_obj} objects, {n_fld} fields, {n_extra} flow/apex/trigger/permset "
-          f"files under {Path(a.out) / 'main' / 'default'}")
+          f"files, {n_rep} reports, {n_dash} dashboards under {default}")
+    print(f"  report refs: {len(counts)} of {n_fld} fields referenced, "
+          f"{n_fld - len(counts)} referenced by nothing; "
+          f"most-referenced {top} ({top_n} files)")
 
 
 if __name__ == "__main__":

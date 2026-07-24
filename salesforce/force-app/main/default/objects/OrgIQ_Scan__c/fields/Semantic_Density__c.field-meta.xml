@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Semantic_Density__c</fullName>
+    <description>Share of description text that adds information beyond the label and API name. Deterministic estimate from the scanner, not a model measurement.</description>
+    <inlineHelpText>Share of description text that adds information beyond the label and API name. Deterministic estimate from the scanner, not a model measurement.</inlineHelpText>
+    <label>Semantic Density</label>
+    <precision>3</precision>
+    <scale>1</scale>
+    <type>Percent</type>
+</CustomField>

@@ -51,6 +51,40 @@ def test_external_id_varies_by_source_and_by_detail():
     assert backlog._external_id(g1, "OrgA") != backlog._external_id(g2, "OrgA")
 
 
+def test_editing_descriptive_state_does_not_re_mint_the_ticket():
+    """Regression: the id used to hash `detail`, which carries mutable state — so
+    rewording a description or a label orphaned the tracked ticket and created a
+    new one. That silently destroyed burn-down across re-scans, which is the
+    tool's core claim."""
+    a = finding(rule="D1.LOW_INFO_DESCRIPTION", component="Acct__c.Seg__c",
+                detail="label='Seg' desc='Seg'")
+    b = finding(rule="D1.LOW_INFO_DESCRIPTION", component="Acct__c.Seg__c",
+                detail="label='Seg' desc='Segment value'")
+    assert backlog._external_id(a, "Org") == backlog._external_id(b, "Org")
+
+    c = finding(component="Acct__c.X__c", detail="label='Old Label'")
+    d = finding(component="Acct__c.X__c", detail="label='New Label'")
+    assert backlog._external_id(c, "Org") == backlog._external_id(d, "Org")
+
+
+def test_identity_bearing_detail_still_separates_distinct_findings():
+    """The other half: for group rules the detail IS the identity, so two distinct
+    clusters on one object must keep distinct ids (the collision that broke bulk
+    upsert)."""
+    for rule in sorted(backlog._IDENTITY_DETAIL_RULES):
+        one = finding(rule=rule, component="Acct__c [2 fields]", detail="A__c | B__c")
+        two = finding(rule=rule, component="Acct__c [2 fields]", detail="C__c | D__c")
+        assert backlog._external_id(one, "Org") != backlog._external_id(two, "Org"), rule
+
+
+def test_backlog_rows_carry_provenance():
+    """Without a source column an ingested Optimizer finding would be
+    indistinguishable from one of our own rules."""
+    assert 'Source' in backlog.BACKLOG_COLUMNS
+    rows, _ = backlog.to_rows([finding(sev="High", conf="High")], "Org")
+    assert rows[0]['Source'] == 'OrgIQ'
+
+
 def test_every_rule_has_a_remediation_playbook_entry():
     """A rule with no playbook silently falls back to generic text in the
     backlog — catch that at build time instead."""

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Status__c</fullName>
-    <description>Lifecycle state across re-scans.</description>
-    <inlineHelpText>Lifecycle state across re-scans.</inlineHelpText>
+    <description>Lifecycle state across re-scans. Defaults to Open so the loader does not have to send it on every upsert.</description>
+    <inlineHelpText>Lifecycle state across re-scans. Defaults to Open so the loader does not have to send it on every upsert.</inlineHelpText>
     <label>Status</label>
     <type>Picklist</type>
     <valueSet>
@@ -11,7 +11,7 @@
             <sorted>false</sorted>
             <value>
                 <fullName>Open</fullName>
-                <default>false</default>
+                <default>true</default>
                 <label>Open</label>
             </value>
             <value>
