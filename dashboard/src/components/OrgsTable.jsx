@@ -12,15 +12,14 @@ const COLUMNS = [
   { key: 'topIssue', label: 'Top issue', align: 'left' },
 ]
 
-export default function OrgsTable({ rows }) {
+export default function OrgsTable({ rows, band, onBand }) {
   const [sort, setSort] = useState({ key: 'composite', dir: 'asc' })
-  const [band, setBand] = useState('All')
   const [q, setQ] = useState('')
 
   const view = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const filtered = rows
-      .filter((r) => band === 'All' || r.band === band)
+      .filter((r) => !band || r.band === band)
       .filter((r) => !needle || r.name.toLowerCase().includes(needle))
     const dir = sort.dir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => {
@@ -41,7 +40,7 @@ export default function OrgsTable({ rows }) {
       <div className="filters">
         <input className="filters__search" type="search" placeholder="Search orgs…"
                value={q} onChange={(e) => setQ(e.target.value)} />
-        <select value={band} onChange={(e) => setBand(e.target.value)}>
+        <select value={band ?? 'All'} onChange={(e) => onBand(e.target.value === 'All' ? null : e.target.value)}>
           <option value="All">All bands</option>
           {BAND_ORDER.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>

@@ -4,7 +4,7 @@ import { bandKey } from '../lib/data.js'
 // Readiness (x) vs remediation effort (y) scatter — where should a practice
 // spend? Left = low readiness (needs work); high = lots of effort. Click a dot
 // to open that org.
-export default function Quadrant({ rows }) {
+export default function Quadrant({ rows, activeBand }) {
   const [hover, setHover] = useState(null)
   const W = 640, H = 380
   const padL = 46, padR = 18, padT = 18, padB = 42
@@ -37,7 +37,7 @@ export default function Quadrant({ rows }) {
           key={r.externalId}
           cx={x(r.composite)} cy={y(r.effort)}
           r={hover === r.externalId ? 8 : 6}
-          className={`quad__dot quad__dot--${bandKey(r.band)}`}
+          className={`quad__dot quad__dot--${bandKey(r.band)} ${activeBand && activeBand !== r.band ? 'quad__dot--dim' : ''}`}
           onMouseEnter={() => setHover(r.externalId)}
           onMouseLeave={() => setHover(null)}
           onClick={() => go(r.externalId)}
