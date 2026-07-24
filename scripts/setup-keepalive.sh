@@ -43,7 +43,10 @@ fi
 
 [[ "${AUTH_URL:-}" == force://* ]] || { echo "Could not obtain a valid auth URL."; exit 1; }
 
-echo "→ Storing it as GitHub secret SFDX_AUTH_URL on $REPO…"
+# Braces matter here: a bare $REPO followed by a multi-byte character (the
+# ellipsis) lets bash read those bytes as part of the variable name, which under
+# `set -u` dies with "unbound variable".
+echo "→ Storing it as GitHub secret SFDX_AUTH_URL on ${REPO}..."
 printf '%s' "$AUTH_URL" | gh secret set SFDX_AUTH_URL --repo "$REPO"
 
 echo "→ Triggering a test run…"
