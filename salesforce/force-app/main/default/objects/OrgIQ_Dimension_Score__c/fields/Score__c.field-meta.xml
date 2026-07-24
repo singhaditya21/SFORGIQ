@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Score__c</fullName>
+    <description>Dimension score 0-100. Only meaningful when rule coverage is high.</description>
+    <inlineHelpText>Dimension score 0-100. Only meaningful when rule coverage is high.</inlineHelpText>
+    <label>Score</label>
+    <precision>5</precision>
+    <scale>1</scale>
+    <type>Number</type>
+</CustomField>

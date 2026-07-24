@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>In_Composite__c</fullName>
+    <description>False when coverage fell below threshold and the dimension was excluded from the composite.</description>
+    <inlineHelpText>False when coverage fell below threshold and the dimension was excluded from the composite.</inlineHelpText>
+    <label>Included In Composite</label>
+    <defaultValue>false</defaultValue>
+    <type>Checkbox</type>
+</CustomField>

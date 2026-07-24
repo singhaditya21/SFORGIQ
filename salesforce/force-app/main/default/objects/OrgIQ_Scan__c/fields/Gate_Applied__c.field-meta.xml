@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Gate_Applied__c</fullName>
+    <description>True when a gate rule capped the composite score.</description>
+    <inlineHelpText>True when a gate rule capped the composite score.</inlineHelpText>
+    <label>Gate Applied</label>
+    <defaultValue>false</defaultValue>
+    <type>Checkbox</type>
+</CustomField>

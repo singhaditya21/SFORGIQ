@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Scan__c</fullName>
+    <description>The scan that produced this finding.</description>
+    <inlineHelpText>The scan that produced this finding.</inlineHelpText>
+    <label>Scan</label>
+    <referenceTo>OrgIQ_Scan__c</referenceTo>
+    <relationshipLabel>Findings</relationshipLabel>
+    <relationshipName>Findings</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>

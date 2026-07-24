@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Missing_Signals__c</fullName>
+    <description>Signals that were unavailable, causing rules to be skipped.</description>
+    <inlineHelpText>Signals that were unavailable, causing rules to be skipped.</inlineHelpText>
+    <label>Missing Signals</label>
+    <length>255</length>
+    <type>Text</type>
+</CustomField>

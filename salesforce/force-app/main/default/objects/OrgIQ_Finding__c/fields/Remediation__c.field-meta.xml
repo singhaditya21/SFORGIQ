@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Remediation__c</fullName>
+    <description>Ordered steps to resolve this finding.</description>
+    <inlineHelpText>Ordered steps to resolve this finding.</inlineHelpText>
+    <label>Remediation</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>4</visibleLines>
+</CustomField>

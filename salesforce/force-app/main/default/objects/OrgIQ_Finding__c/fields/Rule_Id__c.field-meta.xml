@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Rule_Id__c</fullName>
+    <description>Stable identifier of the rule that fired, for example D1.SEMANTIC_DUPLICATE.</description>
+    <inlineHelpText>Stable identifier of the rule that fired, for example D1.SEMANTIC_DUPLICATE.</inlineHelpText>
+    <label>Rule Id</label>
+    <length>80</length>
+    <type>Text</type>
+</CustomField>

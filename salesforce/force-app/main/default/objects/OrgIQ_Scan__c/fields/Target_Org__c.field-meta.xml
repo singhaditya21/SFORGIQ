@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Target_Org__c</fullName>
+    <description>Identifier of the org or repository that was scanned.</description>
+    <inlineHelpText>Identifier of the org or repository that was scanned.</inlineHelpText>
+    <label>Target Org</label>
+    <length>255</length>
+    <type>Text</type>
+</CustomField>

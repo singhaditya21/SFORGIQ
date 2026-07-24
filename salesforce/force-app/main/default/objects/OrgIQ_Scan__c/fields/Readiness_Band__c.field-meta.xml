@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Readiness_Band__c</fullName>
+    <description>Banded interpretation of the composite score.</description>
+    <inlineHelpText>Banded interpretation of the composite score.</inlineHelpText>
+    <label>Readiness Band</label>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Not Ready</fullName>
+                <default>false</default>
+                <label>Not Ready</label>
+            </value>
+            <value>
+                <fullName>Foundational Work Required</fullName>
+                <default>false</default>
+                <label>Foundational Work Required</label>
+            </value>
+            <value>
+                <fullName>Conditionally Ready</fullName>
+                <default>false</default>
+                <label>Conditionally Ready</label>
+            </value>
+            <value>
+                <fullName>Ready</fullName>
+                <default>false</default>
+                <label>Ready</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

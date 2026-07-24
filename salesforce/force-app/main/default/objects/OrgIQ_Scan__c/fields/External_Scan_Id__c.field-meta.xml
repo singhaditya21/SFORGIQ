@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>External_Scan_Id__c</fullName>
+    <description>Deterministic scan identifier from the CLI. Enables idempotent re-import.</description>
+    <inlineHelpText>Deterministic scan identifier from the CLI. Enables idempotent re-import.</inlineHelpText>
+    <label>External Scan Id</label>
+    <externalId>true</externalId>
+    <length>255</length>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

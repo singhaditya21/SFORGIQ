@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Dimension__c</fullName>
+    <description>Which readiness dimension this score covers.</description>
+    <inlineHelpText>Which readiness dimension this score covers.</inlineHelpText>
+    <label>Dimension</label>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>D1 Grounding Quality</fullName>
+                <default>false</default>
+                <label>D1 Grounding Quality</label>
+            </value>
+            <value>
+                <fullName>D2 Data Foundation</fullName>
+                <default>false</default>
+                <label>D2 Data Foundation</label>
+            </value>
+            <value>
+                <fullName>D3 Action Surface</fullName>
+                <default>false</default>
+                <label>D3 Action Surface</label>
+            </value>
+            <value>
+                <fullName>D4 Permission Blast Radius</fullName>
+                <default>false</default>
+                <label>D4 Permission Blast Radius</label>
+            </value>
+            <value>
+                <fullName>D5 Automation Collision</fullName>
+                <default>false</default>
+                <label>D5 Automation Collision</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

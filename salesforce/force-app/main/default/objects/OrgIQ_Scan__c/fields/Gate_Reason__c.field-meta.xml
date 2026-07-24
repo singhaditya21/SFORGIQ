@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Gate_Reason__c</fullName>
+    <description>Which gate rule was applied and why.</description>
+    <inlineHelpText>Which gate rule was applied and why.</inlineHelpText>
+    <label>Gate Reason</label>
+    <length>255</length>
+    <type>Text</type>
+</CustomField>

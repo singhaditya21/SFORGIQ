@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Effort_Points__c</fullName>
+    <description>Provisional effort estimate. Not calibrated against engagement data.</description>
+    <inlineHelpText>Provisional effort estimate. Not calibrated against engagement data.</inlineHelpText>
+    <label>Effort Points</label>
+    <precision>5</precision>
+    <scale>1</scale>
+    <type>Number</type>
+</CustomField>

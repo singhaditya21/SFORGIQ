@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Dimension__c</fullName>
+    <description>Readiness dimension this finding belongs to.</description>
+    <inlineHelpText>Readiness dimension this finding belongs to.</inlineHelpText>
+    <label>Dimension</label>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>D1</fullName>
+                <default>false</default>
+                <label>D1</label>
+            </value>
+            <value>
+                <fullName>D2</fullName>
+                <default>false</default>
+                <label>D2</label>
+            </value>
+            <value>
+                <fullName>D3</fullName>
+                <default>false</default>
+                <label>D3</label>
+            </value>
+            <value>
+                <fullName>D4</fullName>
+                <default>false</default>
+                <label>D4</label>
+            </value>
+            <value>
+                <fullName>D5</fullName>
+                <default>false</default>
+                <label>D5</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

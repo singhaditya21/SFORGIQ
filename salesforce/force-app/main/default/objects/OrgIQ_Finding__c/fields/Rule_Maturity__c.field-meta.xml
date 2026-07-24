@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Rule_Maturity__c</fullName>
+    <description>Validation evidence behind the rule. Caps the confidence this finding may claim.</description>
+    <inlineHelpText>Validation evidence behind the rule. Caps the confidence this finding may claim.</inlineHelpText>
+    <label>Rule Maturity</label>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>experimental</fullName>
+                <default>false</default>
+                <label>experimental</label>
+            </value>
+            <value>
+                <fullName>validated</fullName>
+                <default>false</default>
+                <label>validated</label>
+            </value>
+            <value>
+                <fullName>field-proven</fullName>
+                <default>false</default>
+                <label>field-proven</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

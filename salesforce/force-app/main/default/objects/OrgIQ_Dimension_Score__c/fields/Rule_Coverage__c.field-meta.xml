@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Rule_Coverage__c</fullName>
+    <description>Proportion of this dimension's rules that could run given available signals.</description>
+    <inlineHelpText>Proportion of this dimension's rules that could run given available signals.</inlineHelpText>
+    <label>Rule Coverage</label>
+    <precision>5</precision>
+    <scale>1</scale>
+    <type>Percent</type>
+</CustomField>

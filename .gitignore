@@ -1,0 +1,19 @@
+# Packaging artifact (the delivered bundle; project source lives at repo root)
+files.zip
+
+# Local tooling / editor
+.claude/
+.vscode/
+.idea/
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Salesforce CLI
+.sf/
+.sfdx/
