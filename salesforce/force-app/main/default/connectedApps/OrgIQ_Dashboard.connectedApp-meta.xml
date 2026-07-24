@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ConnectedApp xmlns="http://soap.sforce.com/2006/04/metadata">
+    <contactEmail>singhaditya21@gmail.com</contactEmail>
+    <label>OrgIQ Dashboard</label>
+    <oauthConfig>
+        <callbackUrl>https://singhaditya21.github.io/SFORGIQ/</callbackUrl>
+        <isConsumerSecretOptional>true</isConsumerSecretOptional>
+        <isPkceRequired>true</isPkceRequired>
+        <scopes>Api</scopes>
+        <scopes>RefreshToken</scopes>
+        <scopes>OpenID</scopes>
+    </oauthConfig>
+</ConnectedApp>
