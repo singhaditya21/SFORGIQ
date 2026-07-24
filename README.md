@@ -38,6 +38,14 @@ orgiq scan --org my-client-org      # full scan
 **Environment done:** Salesforce CLI installed (macOS arm64), Developer Edition org
 created, `sf org login web --alias orgiq` complete.
 
+**Keeping it alive.** GitHub Pages is static and effectively always-up; the public
+dashboard's demo mode reads a bundled JSON, so it stays live even if the org is
+gone. The one perishable piece is the **Agentforce dev org**, which Salesforce
+deletes after ~45 days without a login. `.github/workflows/keepalive.yml` logs in
+weekly (and writes a heartbeat commit so GitHub never disables the scheduler), so
+nothing ever has to be done by hand. One-time setup: `bash scripts/setup-keepalive.sh`
+to store the `SFDX_AUTH_URL` secret.
+
 ---
 
 ## The five dimensions

@@ -1,0 +1,53 @@
+name: Salesforce org keep-alive
+
+# Agentforce Developer Edition orgs are deleted after ~45 days without a login.
+# This logs in weekly (via a stored SFDX auth URL) so that clock never runs out.
+# It also writes a tiny heartbeat commit each run, which keeps GitHub's own
+# "disable scheduled workflows after 60 days of no repo activity" clock from
+# ever tripping — so the whole thing is self-sustaining once set up.
+#
+# One-time setup: add the SFDX_AUTH_URL secret via scripts/setup-keepalive.sh.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'      # every Monday 06:00 UTC — far under both limits
+  workflow_dispatch:
+
+permissions:
+  contents: write            # to push the heartbeat commit
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Salesforce CLI
+        run: npm install --global @salesforce/cli@latest
+
+      - name: Log in to Salesforce (resets the 45-day org clock)
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          if [ -z "${SFDX_AUTH_URL:-}" ]; then
+            echo "::error::SFDX_AUTH_URL secret is not set. Run scripts/setup-keepalive.sh once."
+            exit 1
+          fi
+          printf '%s' "$SFDX_AUTH_URL" > "$RUNNER_TEMP/auth.txt"
+          sf org login sfdx-url --sfdx-url-file "$RUNNER_TEMP/auth.txt" --alias keepalive --set-default
+          rm -f "$RUNNER_TEMP/auth.txt"
+          sf data query --query "SELECT Name FROM Organization LIMIT 1" --target-org keepalive
+
+      - name: Heartbeat commit (keeps the scheduler alive)
+        run: |
+          mkdir -p ops
+          date -u +%FT%TZ > ops/last-keepalive.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ops/last-keepalive.txt
+          git commit -m "chore: keep-alive heartbeat [skip ci]" || exit 0
+          git push
