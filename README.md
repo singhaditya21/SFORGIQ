@@ -27,9 +27,9 @@ orgiq scan --org my-client-org      # full scan
 | Specification (`PRD.md`) | v0.7 — complete, 13 sections + appendices |
 | Scanner (`scanner/`) | Working spike. 5 D1 rules, source mode, runs on real metadata |
 | Data generator (`fixtures/`) | Working. Generates CSV with controlled distributions |
-| Salesforce objects (`salesforce/`) | Built, XML-validated, **not yet deployed** |
+| Salesforce objects (`salesforce/`) | Built, XML-validated, **deployed to `orgiq`** (3 objects, 32 fields) |
 | Dashboard | Not started |
-| Backlog CSV output | Not started |
+| Backlog CSV output | Working. Threshold-gated Jira CSV, remediation + provisional effort points |
 | HTML report | Not started |
 
 **Environment done:** Salesforce CLI installed (macOS arm64), Developer Edition org
@@ -126,13 +126,13 @@ Neither resembles a fifteen-year-old enterprise org.
 
 ## Immediate next steps
 
-1. **Deploy the objects** — `sf project deploy start --source-dir salesforce/force-app --target-org orgiq`
-2. **Backlog CSV emitter** — turn scanner findings into Jira-importable rows
+1. ~~**Deploy the objects**~~ — **done.** Deployed to `orgiq` via `sf project deploy start --source-dir salesforce/force-app --target-org orgiq` (needs `sfdx-project.json`, now at repo root).
+2. ~~**Backlog CSV emitter**~~ — **done.** `scanner/backlog.py`; run with `--backlog out.csv` (see below).
 3. **HTML report** — the scan output as something shareable
 4. **Dashboard demo mode** — static site reading bundled sample data, no auth
 5. **OAuth live mode** — Connected App + CORS, then real data
 
-Steps 2 and 3 complete the first end-to-end slice. Everything after is additive.
+Step 3 completes the first end-to-end slice (scan → shareable output). Everything after is additive.
 
 ---
 
@@ -142,12 +142,14 @@ Steps 2 and 3 complete the first end-to-end slice. Everything after is additive.
 SFORGIQ/
   README.md              this file
   PRD.md                 full specification, v0.7
+  sfdx-project.json      SFDX config so the objects can be deployed
   scanner/
     orgiq_spike.py       working scanner, 5 D1 rules, stdlib only
+    backlog.py           Jira-importable backlog CSV emitter (threshold-gated)
   fixtures/
     seed_data.py         fixture data generator
   salesforce/
-    force-app/           3 custom objects, 32 fields, ready to deploy
+    force-app/           3 custom objects, 32 fields (deployed to orgiq)
 ```
 
 **Running the scanner:**
@@ -155,6 +157,18 @@ SFORGIQ/
 ```
 python3 scanner/orgiq_spike.py /path/to/sfdx-project --name "Client X"
 ```
+
+**Emitting a backlog CSV** (importable into Jira / Azure DevOps):
+
+```
+python3 scanner/orgiq_spike.py /path/to/sfdx-project --name "Client X" --backlog backlog.csv
+```
+
+Only findings meeting `severity >= Medium AND confidence >= Medium` are emitted
+as tickets (PRD §4.6); everything else is held back as an observation. Each row
+carries remediation steps, acceptance criteria, a **provisional** effort estimate,
+and a deterministic External ID so re-imports update tickets instead of duplicating
+them.
 
 **Generating fixture data:**
 

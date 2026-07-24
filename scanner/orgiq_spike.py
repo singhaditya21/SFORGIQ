@@ -18,6 +18,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
+import backlog  # sibling module; scanner/ dir is on sys.path when run directly
+
 NS = {"sf": "http://soap.sforce.com/2006/04/metadata"}
 
 # ---------------------------------------------------------------- model
@@ -370,6 +372,9 @@ def main():
     ap.add_argument("--name", default=None)
     ap.add_argument("--show", type=int, default=10)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--backlog", default=None,
+                    help="write a Jira-importable backlog CSV to this path "
+                         "(threshold-gated: severity>=Medium AND confidence>=Medium)")
     a = ap.parse_args()
 
     root = Path(a.path)
@@ -390,6 +395,13 @@ def main():
         print(f"wrote {a.out}")
     else:
         print(md)
+
+    if a.backlog:
+        source = a.name or root.name
+        written, observations = backlog.write_csv(findings, source, a.backlog)
+        print(f"\nwrote {a.backlog} — {written} backlog item(s) emitted, "
+              f"{observations} observation(s) held back by the §4.6 gate "
+              f"(severity>=Medium AND confidence>=Medium)")
 
 
 if __name__ == "__main__":
