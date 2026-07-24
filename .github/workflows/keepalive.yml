@@ -59,18 +59,13 @@ jobs:
             --data-urlencode "grant_type=refresh_token" \
             --data-urlencode "client_id=PlatformCLI" \
             --data-urlencode "refresh_token=$token")
-          # Surface Salesforce's own error code — never the token. Without this a
-          # failure here is undebuggable from the logs.
-          access=$(printf '%s' "$resp" | python3 -c 'import sys,json
-try: d=json.load(sys.stdin)
-except Exception: d={}
-print(d.get("access_token",""))')
+          access=$(printf '%s' "$resp" | jq -r '.access_token // empty')
           if [ -z "$access" ]; then
-            printf '%s' "$resp" | python3 -c 'import sys,json
-try: d=json.load(sys.stdin)
-except Exception:
-    print("::error::token endpoint returned non-JSON"); raise SystemExit
-print("::error::OAuth refresh rejected: %s — %s" % (d.get("error","?"), d.get("error_description","?")))'
+            # Surface Salesforce's own error code — never the token. Without this
+            # a failure here is undebuggable from the logs.
+            err=$(printf '%s' "$resp" | jq -r '.error // "non-JSON response"')
+            desc=$(printf '%s' "$resp" | jq -r '.error_description // ""')
+            echo "::error::OAuth refresh rejected: $err $desc"
             exit 1
           fi
           echo "::add-mask::$access"
@@ -78,7 +73,7 @@ print("::error::OAuth refresh rejected: %s — %s" % (d.get("error","?"), d.get(
           # Touch the org so the session is genuinely used, and prove it worked.
           name=$(curl -sS -H "Authorization: Bearer $access" \
             "https://$host/services/data/v60.0/query?q=SELECT+Name+FROM+Organization+LIMIT+1" \
-            | python3 -c 'import sys,json; r=json.load(sys.stdin).get("records") or [{}]; print(r[0].get("Name",""))')
+            | jq -r '.records[0].Name // empty')
           if [ -z "$name" ]; then
             echo "::error::Authenticated but the query failed."
             exit 1
