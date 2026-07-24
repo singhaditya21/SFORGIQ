@@ -55,13 +55,22 @@ jobs:
 
           # Exchange the refresh token for an access token. This request is itself
           # the "login" Salesforce records, which is what resets the inactivity clock.
-          access=$(curl -sS -X POST "https://$host/services/oauth2/token" \
+          resp=$(curl -sS -X POST "https://$host/services/oauth2/token" \
             --data-urlencode "grant_type=refresh_token" \
             --data-urlencode "client_id=PlatformCLI" \
-            --data-urlencode "refresh_token=$token" \
-            | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))')
+            --data-urlencode "refresh_token=$token")
+          # Surface Salesforce's own error code — never the token. Without this a
+          # failure here is undebuggable from the logs.
+          access=$(printf '%s' "$resp" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: d={}
+print(d.get("access_token",""))')
           if [ -z "$access" ]; then
-            echo "::error::Token refresh failed — the refresh token may have been revoked. Re-run scripts/setup-keepalive.sh."
+            printf '%s' "$resp" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception:
+    print("::error::token endpoint returned non-JSON"); raise SystemExit
+print("::error::OAuth refresh rejected: %s — %s" % (d.get("error","?"), d.get("error_description","?")))'
             exit 1
           fi
           echo "::add-mask::$access"
