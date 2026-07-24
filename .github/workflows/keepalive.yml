@@ -1,12 +1,18 @@
 name: Salesforce org keep-alive
 
 # Agentforce Developer Edition orgs are deleted after ~45 days without a login.
-# This logs in weekly (via a stored SFDX auth URL) so that clock never runs out.
-# It also writes a tiny heartbeat commit each run, which keeps GitHub's own
-# "disable scheduled workflows after 60 days of no repo activity" clock from
-# ever tripping — so the whole thing is self-sustaining once set up.
+# This logs in weekly so that clock never runs out, and writes a heartbeat commit
+# so GitHub's own "disable scheduled workflows after 60 days of no repo activity"
+# clock never trips either. Self-sustaining once the secret is set.
 #
-# One-time setup: add the SFDX_AUTH_URL secret via scripts/setup-keepalive.sh.
+# It deliberately does NOT use `sf org login sfdx-url`: this org's refresh token
+# contains a ":", and the force://<clientId>:<clientSecret>:<refreshToken>@<host>
+# format is split on colons, so the CLI rejects the URL as malformed. We parse the
+# secret ourselves (the fixed "force://PlatformCLI::" prefix and the last "@" make
+# that unambiguous) and do the OAuth refresh directly, which also means no CLI to
+# install and a job that finishes in seconds.
+#
+# One-time setup: bash scripts/setup-keepalive.sh
 
 on:
   schedule:
@@ -26,21 +32,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Salesforce CLI
-        run: npm install --global @salesforce/cli@latest
-
       - name: Log in to Salesforce (resets the 45-day org clock)
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: |
+          set -euo pipefail
           if [ -z "${SFDX_AUTH_URL:-}" ]; then
             echo "::error::SFDX_AUTH_URL secret is not set. Run scripts/setup-keepalive.sh once."
             exit 1
           fi
-          printf '%s' "$SFDX_AUTH_URL" > "$RUNNER_TEMP/auth.txt"
-          sf org login sfdx-url --sfdx-url-file "$RUNNER_TEMP/auth.txt" --alias keepalive --set-default
-          rm -f "$RUNNER_TEMP/auth.txt"
-          sf data query --query "SELECT Name FROM Organization LIMIT 1" --target-org keepalive
+
+          rest="${SFDX_AUTH_URL#force://}"
+          host="${rest##*@}"          # after the LAST @ — the token has no @
+          creds="${rest%@*}"
+          token="${creds#*::}"        # after the FIRST :: — keeps colons in the token
+          echo "::add-mask::$token"   # derived from a secret, so mask it explicitly
+
+          if [ -z "$host" ] || [ -z "$token" ]; then
+            echo "::error::Could not parse SFDX_AUTH_URL. Re-run scripts/setup-keepalive.sh."
+            exit 1
+          fi
+
+          # Exchange the refresh token for an access token. This request is itself
+          # the "login" Salesforce records, which is what resets the inactivity clock.
+          access=$(curl -sS -X POST "https://$host/services/oauth2/token" \
+            --data-urlencode "grant_type=refresh_token" \
+            --data-urlencode "client_id=PlatformCLI" \
+            --data-urlencode "refresh_token=$token" \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))')
+          if [ -z "$access" ]; then
+            echo "::error::Token refresh failed — the refresh token may have been revoked. Re-run scripts/setup-keepalive.sh."
+            exit 1
+          fi
+          echo "::add-mask::$access"
+
+          # Touch the org so the session is genuinely used, and prove it worked.
+          name=$(curl -sS -H "Authorization: Bearer $access" \
+            "https://$host/services/data/v60.0/query?q=SELECT+Name+FROM+Organization+LIMIT+1" \
+            | python3 -c 'import sys,json; r=json.load(sys.stdin).get("records") or [{}]; print(r[0].get("Name",""))')
+          if [ -z "$name" ]; then
+            echo "::error::Authenticated but the query failed."
+            exit 1
+          fi
+          echo "Keep-alive login recorded for org: $name"
 
       - name: Heartbeat commit (keeps the scheduler alive)
         run: |
