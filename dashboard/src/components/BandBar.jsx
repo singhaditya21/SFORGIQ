@@ -20,17 +20,32 @@ export default function BandBar({ breakdown, active, onSelect }) {
           </button>
         ))}
       </div>
-      <div className="bandbar__legend">
-        {breakdown.map((b) => (
-          <button key={b.band}
-                  className={`bandbar__key ${active === b.band ? 'bandbar__key--on' : ''}`}
-                  onClick={() => toggle(b.band)}>
-            <span className={`dot dot--band-${bandKey(b.band)}`} />
-            {BAND_META[b.band].short} <b>{b.count}</b>
-          </button>
-        ))}
-        {active && <button className="bandbar__clear" onClick={() => onSelect(null)}>clear ✕</button>}
-      </div>
+      {/* What each band costs, not just how many orgs are in it. */}
+      <table className="bandtab">
+        <thead>
+          <tr><th>Band</th><th className="c-num">Orgs</th><th className="c-num">Avg</th>
+            <th className="c-num">Findings</th><th className="c-num">Effort</th></tr>
+        </thead>
+        <tbody>
+          {breakdown.map((b) => (
+            <tr key={b.band}
+                className={`bandtab__row ${active === b.band ? 'bandtab__row--on' : ''}`}
+                onClick={() => toggle(b.band)} title={`Filter to ${b.band}`}>
+              <td>
+                <span className={`dot dot--band-${bandKey(b.band)}`} />
+                {BAND_META[b.band].short}
+              </td>
+              <td className="c-num"><b>{b.count}</b></td>
+              <td className="c-num">{b.avgScore ?? '—'}</td>
+              <td className="c-num">{b.findings.toLocaleString()}</td>
+              <td className="c-num">{b.effort.toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {active && (
+        <button className="bandbar__clear" onClick={() => onSelect(null)}>clear filter ✕</button>
+      )}
     </div>
   )
 }

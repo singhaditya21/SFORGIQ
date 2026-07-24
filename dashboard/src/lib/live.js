@@ -88,7 +88,22 @@ export async function handleRedirect() {
         'after fixing the allowlist — reloading this page will not recover it'
       )
     }
-    if (!res.ok) throw new Error(`token exchange failed (${res.status}) — check the org CORS allowlist`)
+    if (!res.ok) {
+      // Getting a response at all means CORS is fine — do not blame it. Salesforce
+      // returns its own reason in the body, so show that instead of a guess.
+      let detail = ''
+      try {
+        const err = await res.json()
+        detail = [err.error, err.error_description].filter(Boolean).join(' — ')
+      } catch {
+        detail = (await res.text().catch(() => '')).slice(0, 200)
+      }
+      const hint = /invalid_grant/.test(detail)
+        ? ' The authorization code is single-use: if you reloaded, or came back to an ' +
+          'old tab, start the sign-in again rather than retrying this one.'
+        : ''
+      throw new Error(`Salesforce rejected the token exchange (${res.status}): ${detail || 'no reason given'}.${hint}`)
+    }
     const t = await res.json()
     const tok = { accessToken: t.access_token, instanceUrl: t.instance_url }
     sessionStorage.setItem(TOK, JSON.stringify(tok))

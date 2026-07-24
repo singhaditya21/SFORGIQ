@@ -280,10 +280,28 @@ export function dimensionAverages(scans) {
     .map((a) => ({ code: a.code, name: a.name, avg: Math.round(a.sum / a.n), orgs: a.n }))
 }
 
+// Count per band, plus what each band actually costs — the counts alone left the
+// card mostly empty, and "9 orgs" means little without the work behind it.
 export function bandBreakdown(scans) {
-  const c = Object.fromEntries(BAND_ORDER.map((b) => [b, 0]))
-  for (const s of scans) c[s.scan.readinessBand] = (c[s.scan.readinessBand] || 0) + 1
-  return BAND_ORDER.map((band) => ({ band, count: c[band] }))
+  const acc = Object.fromEntries(BAND_ORDER.map((b) => [b, { n: 0, score: 0, findings: 0, effort: 0 }]))
+  for (const s of scans) {
+    const a = acc[s.scan.readinessBand]
+    if (!a) continue
+    a.n += 1
+    a.score += s.scan.compositeScore
+    a.findings += s.findings.length
+    a.effort += orgEffort(s.findings)
+  }
+  return BAND_ORDER.map((band) => {
+    const a = acc[band]
+    return {
+      band,
+      count: a.n,
+      avgScore: a.n ? Math.round(a.score / a.n) : null,
+      findings: a.findings,
+      effort: a.effort,
+    }
+  })
 }
 
 // Finding counts across the whole portfolio, by rule and by severity.

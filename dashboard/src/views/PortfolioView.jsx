@@ -115,10 +115,23 @@ export default function PortfolioView({ data }) {
                              onDimension={(d) => toggle('dimension', d)} />
         </section>
 
+        {/* Sits in row 1 with the two short cards so all three are a similar
+            height — a tall card here stretched its neighbours into ~900px of
+            dead white space. */}
         <section className="card card--flex">
           <div className="card__head">
+            <h2 className="card__title">Where to spend</h2>
+            <span className="card__hint">readiness vs effort · click a dot</span>
+          </div>
+          <Quadrant rows={rows} activeBand={filter.band} />
+        </section>
+
+        {/* Full width, bars laid out in columns: 21 rules stacked in a third of
+            the screen is what made this card 1,100px tall. */}
+        <section className="card card--full">
+          <div className="card__head">
             <h2 className="card__title">Most common problems</h2>
-            <span className="card__hint">findings by type · click a bar</span>
+            <span className="card__hint">findings by type · click a bar to filter</span>
           </div>
           <FindingAnalytics breakdown={findingMix} rule={filter.rule} severity={filter.severity}
                             onRule={(r) => toggle('rule', r)}
@@ -128,21 +141,13 @@ export default function PortfolioView({ data }) {
         <section className="card card--full">
           <div className="card__head">
             <h2 className="card__title">Every org against every dimension</h2>
-            <span className="card__hint">{heat.length} orgs · darker is worse</span>
+            <span className="card__hint">{heat.length} orgs · darker is worse · click a row or a column</span>
           </div>
           <Heatmap rows={heat} dimension={filter.dimension}
                    onDimension={(d) => toggle('dimension', d)} />
         </section>
 
-        <section className="card">
-          <div className="card__head">
-            <h2 className="card__title">Where to spend</h2>
-            <span className="card__hint">readiness vs effort · click a dot</span>
-          </div>
-          <Quadrant rows={rows} activeBand={filter.band} />
-        </section>
-
-        <section className="card card--wide">
+        <section className="card card--full">
           <div className="card__head">
             <h2 className="card__title">
               All orgs

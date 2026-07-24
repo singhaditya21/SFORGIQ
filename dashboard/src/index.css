@@ -119,7 +119,13 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .findings { grid-column: 1 / -1; }
 .card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
 .card__title { font-size: 15px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
-.card__hint { font-size: 12px; color: var(--text-3); text-align: right; }
+/* Most hints are instructions ("click a bar to filter"). Give them a faint pill
+   so they read as an affordance rather than as a caption. */
+.card__hint {
+  font-size: 11.5px; color: var(--text-2); text-align: right; white-space: nowrap;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 9px;
+}
 
 /* ---------- band bar ---------- */
 .bandbar__track { display: flex; height: 30px; border-radius: 8px; overflow: hidden; background: var(--border); }
@@ -130,6 +136,18 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .bandbar__seg--foundational { background: var(--band-foundational); }
 .bandbar__seg--conditional { background: var(--band-conditional); }
 .bandbar__seg--ready { background: var(--band-ready); }
+.bandtab { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12.5px; }
+.bandtab th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-3); font-weight: 700; padding: 4px 6px; border-bottom: 1px solid var(--border);
+}
+.bandtab th.c-num, .bandtab td.c-num { text-align: right; }
+.bandtab td { padding: 6px; border-bottom: 1px solid var(--border); color: var(--text-2); }
+.bandtab td:first-child { color: var(--text); display: flex; align-items: center; gap: 7px; }
+.bandtab tbody tr:last-child td { border-bottom: none; }
+.bandtab__row { cursor: pointer; }
+.bandtab__row:hover { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.bandtab__row--on { background: var(--accent-soft); }
 .bandbar__legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; font-size: 12.5px; color: var(--text-2); align-items: center; }
 .bandbar__key { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; font: inherit; color: inherit; cursor: pointer; padding: 3px 6px; border-radius: 6px; }
 .bandbar__key:hover { background: var(--surface-2); }
@@ -173,7 +191,10 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .heat { font-size: 12px; }
 .heat__head, .heat__row {
   display: grid;
-  grid-template-columns: minmax(150px, 2.2fr) repeat(6, minmax(34px, 0.5fr));
+  /* Cap the name column — as a fraction it ate ~40% of a wide screen and left a
+     dead gap before the cells. The cells take the rest, which is what you
+     actually read. */
+  grid-template-columns: minmax(150px, 300px) repeat(6, 1fr);
   gap: 2px; align-items: center;
 }
 .heat__head { margin-bottom: 3px; }
@@ -255,6 +276,12 @@ code { font-family: var(--mono); font-size: 0.92em; }
 
 /* ---------- finding analytics ---------- */
 .analytics { display: grid; grid-template-columns: 1fr; gap: 14px; }
+/* 21 rules stacked in one narrow column made this card ~1,100px tall and
+   stretched its row-mates into dead space. Flow them across the width instead. */
+.analytics__rules {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  column-gap: 26px;
+}
 .arule { margin-bottom: 9px; }
 .arule__top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
 .arule__name { font-weight: 500; }
@@ -440,8 +467,19 @@ code { font-family: var(--mono); font-size: 0.92em; }
   text-align: left; cursor: pointer; padding: 0; width: 100%;
   border-radius: 5px;
 }
-.arule { display: block; margin-bottom: 8px; padding: 3px 4px; }
-.arule:hover, .dimavg__row:hover, .sevrow:hover { background: var(--surface-2); }
+.arule { display: block; margin-bottom: 8px; padding: 3px 6px; }
+/* These read as static charts unless the affordance is unmistakable: an accent
+   rail plus a tinted row on hover, and a real focus ring for keyboard users. */
+.arule:hover, .dimavg__row:hover, .sevrow:hover,
+.bandbar__key:hover {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.arule:focus-visible, .dimavg__row:focus-visible, .sevrow:focus-visible,
+.bandbar__key:focus-visible, .bandbar__seg:focus-visible, .heat__col:focus-visible,
+.heat__row:focus-visible, .kpi--click:focus-visible, .orgcard:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
 .arule--on, .dimavg__row--on, .sevrow--on { background: var(--accent-soft); }
 .arule--on .arule__name, .dimavg__row--on .dimavg__code, .sevrow--on .sevrow__name { color: var(--accent); }
 .arule__top { display: flex; justify-content: space-between; }
