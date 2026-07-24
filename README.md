@@ -33,7 +33,7 @@ orgiq scan --org my-client-org      # full scan
 | Salesforce objects (`salesforce/`) | **Deployed to `orgiq`** (3 objects, 32 fields) + `OrgIQ_Admin` permission set |
 | Salesforce data | **Loaded & confirmed** — 24-org portfolio: 24 scans, 120 dimension scores, 1,827 findings (~80% of DE storage) |
 | Backlog CSV output | Working. Threshold-gated Jira CSV, remediation + provisional effort points |
-| Dashboard (`dashboard/`) | **Live on GitHub Pages.** React app, demo mode reads real org data |
+| Dashboard (`dashboard/`) | **Live on GitHub Pages.** React portfolio dashboard — overview + per-org drill-down, reads real org data |
 
 **Environment done:** Salesforce CLI installed (macOS arm64), Developer Edition org
 created, `sf org login web --alias orgiq` complete.
@@ -157,20 +157,25 @@ SFORGIQ/
   salesforce/
     force-app/           3 custom objects, 32 fields, OrgIQ_Admin permission set
     load_scan.py         idempotent Bulk-API loader (scan result JSON -> org)
-  dashboard/             React app; deployed to GitHub Pages (demo mode)
-    export_demo_data.py  exports a scan from the org into public/sample-scan.json
+  dashboard/             React portfolio dashboard; deployed to GitHub Pages
+    src/views/           PortfolioView (overview) + OrgDetail (drill-down)
+    export_portfolio.py  exports every scan from the org into public/portfolio.json
+    export_demo_data.py  exports a single scan (legacy, single-scan view)
   .github/workflows/     GitHub Pages build + deploy
 ```
 
-**End-to-end run** (fixture → scan → Salesforce → dashboard data):
+**End-to-end run** (portfolio → Salesforce → dashboard data):
 
 ```
-python3 fixtures/gen_messy_org.py --out fixtures/messy_org/force-app
-python3 scanner/orgiq_spike.py fixtures/messy_org/force-app --name "TelcoCorp CRM (demo)" \
-    --backlog backlog.csv --scan-json scan.json
-python3 salesforce/load_scan.py scan.json --target-org orgiq
-python3 dashboard/export_demo_data.py --target-org orgiq --out dashboard/public/sample-scan.json
+# generate a 24-org portfolio and bulk-load it into the org
+python3 scanner/scan_portfolio.py --out portfolio.json
+python3 salesforce/load_portfolio.py portfolio.json --target-org orgiq
+# export it back out for the dashboard's demo mode
+python3 dashboard/export_portfolio.py --target-org orgiq --out dashboard/public/portfolio.json
 ```
+
+Single-org flow (fixture → scan → org) is still available via
+`fixtures/gen_messy_org.py`, `orgiq_spike.py --scan-json`, and `salesforce/load_scan.py`.
 
 **Running the scanner:**
 
