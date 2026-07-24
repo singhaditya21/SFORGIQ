@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Billing_Cycle_Day__c</fullName>
+    <label>Billing Cycle Day</label>
+    <type>Number</type>
+    <description>Day of the month on which the recurring invoice is generated.</description>
+</CustomField>

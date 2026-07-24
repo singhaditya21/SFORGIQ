@@ -18,7 +18,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
-import backlog  # sibling module; scanner/ dir is on sys.path when run directly
+import backlog       # sibling module; scanner/ dir is on sys.path when run directly
+import scan_result   # sibling module
 
 NS = {"sf": "http://soap.sforce.com/2006/04/metadata"}
 
@@ -375,6 +376,11 @@ def main():
     ap.add_argument("--backlog", default=None,
                     help="write a Jira-importable backlog CSV to this path "
                          "(threshold-gated: severity>=Medium AND confidence>=Medium)")
+    ap.add_argument("--scan-json", default=None,
+                    help="write the full scan result (scan + dimension scores + "
+                         "findings) as JSON, matching the Salesforce schema")
+    ap.add_argument("--mode", default="Source", choices=["Source", "Org", "Hybrid"],
+                    help="scan mode recorded on the scan result")
     a = ap.parse_args()
 
     root = Path(a.path)
@@ -396,12 +402,20 @@ def main():
     else:
         print(md)
 
+    source = a.name or root.name
     if a.backlog:
-        source = a.name or root.name
         written, observations = backlog.write_csv(findings, source, a.backlog)
         print(f"\nwrote {a.backlog} — {written} backlog item(s) emitted, "
               f"{observations} observation(s) held back by the §4.6 gate "
               f"(severity>=Medium AND confidence>=Medium)")
+
+    if a.scan_json:
+        result = scan_result.build(fields, findings, source, scan_mode=a.mode)
+        scan_result.write_json(result, a.scan_json)
+        s = result["scan"]
+        print(f"\nwrote {a.scan_json} — composite {s['composite_score']} "
+              f"({s['readiness_band']}), {len(result['findings'])} findings, "
+              f"{len(result['dimensions'])} dimensions")
 
 
 if __name__ == "__main__":

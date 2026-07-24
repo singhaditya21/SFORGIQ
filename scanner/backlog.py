@@ -167,8 +167,10 @@ def _component_type(finding) -> str:
 
 def _external_id(finding, source: str) -> str:
     """Deterministic, idempotent id (PRD §4.6). Source stands in for org_id
-    in source mode, so re-scanning the same repo yields the same id."""
-    raw = f"{finding.rule_id}|{finding.component}|{source}"
+    in source mode, so re-scanning the same repo yields the same id. `detail`
+    is included so two aggregate findings on the same object (e.g. two distinct
+    duplicate pairs, both rendered as "Obj [2 fields]") get distinct ids."""
+    raw = f"{finding.rule_id}|{finding.component}|{finding.detail}|{source}"
     return "OIQ-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
