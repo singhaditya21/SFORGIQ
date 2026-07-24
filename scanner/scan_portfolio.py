@@ -20,11 +20,10 @@ import argparse
 import json
 import random
 
+import metadata as md                  # Flow / Apex / trigger / permission-set model
 import orgiq_spike as scanner          # Field, RULES, ABBREV
-import rules_ext                       # D2–D5 rule packs (synthetic signals)
+import rules_ext                       # the real D2–D5 rule packs
 import scan_result
-
-ALL_DIMS = frozenset({"D1", "D2", "D3", "D4", "D5"})
 
 Field = scanner.Field
 ABBREV = scanner.ABBREV
@@ -170,6 +169,95 @@ def gen_object_fields(obj, n, defect_ratio, rnd) -> list:
     return fields
 
 
+def gen_org_metadata(objects, r, rnd) -> md.OrgMetadata:
+    """Build the Flow / Apex / trigger / permission-set material for one org.
+
+    These are the *same structures* the SFDX parsers produce, and the *same*
+    real rule packs run over them — only the inputs are synthesised, scaled by
+    the org's defect ratio. Bodies are real Apex text, so the DML-in-loop and
+    recursion-guard heuristics genuinely fire.
+    """
+    flows, apex, triggers, perms, stats = [], [], [], [], []
+
+    # --- Flows: messier orgs document fewer of them and leave drafts around
+    for i in range(rnd.randint(2, 4)):
+        documented = rnd.random() > r
+        flows.append(md.FlowMeta(
+            api_name=f"{objects[0][:-3]}_Action{i + 1}",
+            label=f"Action {i + 1}",
+            description="Automates a step in the service process." if documented else "",
+            process_type="AutoLaunchedFlow",
+            status="Draft" if rnd.random() < r * 0.4 else "Active",
+        ))
+    if rnd.random() < r:                      # record-triggered flow -> collision risk
+        flows.append(md.FlowMeta(
+            api_name=f"{objects[0][:-3]}_AfterSave", label="After Save",
+            description="Recalculates roll-ups after save.",
+            process_type="AutoLaunchedFlow", status="Active",
+            trigger_object=objects[0], record_trigger_type="CreateAndUpdate"))
+
+    # --- Apex: invocable classes; clean orgs also ship tests
+    for i in range(rnd.randint(1, 3)):
+        cls = f"{objects[min(i, len(objects) - 1)][:-3]}Service"
+        labelled = rnd.random() > r
+        label_part = '(label="Run ' + cls + '")' if labelled else ''
+        apex.append(md.ApexClassMeta(api_name=cls, sharing="with sharing", body=(
+            f"public with sharing class {cls} {{\n"
+            f"    @InvocableMethod{label_part}\n"
+            f"    public static void run(List<Id> ids) {{ }}\n}}\n")))
+        if rnd.random() > r:                  # a test exists
+            apex.append(md.ApexClassMeta(api_name=f"{cls}Test", body=(
+                f"@isTest\nprivate class {cls}Test {{\n"
+                f"    @isTest static void t() {{ {cls}.run(new List<Id>()); }}\n}}\n")))
+
+    # --- Triggers: messy orgs get loops without guards, and doubled triggers
+    for obj in objects[:max(1, int(len(objects) * min(1.0, r + 0.3)))]:
+        base = obj[:-3]
+        if rnd.random() < r:                  # unbulkified, unguarded
+            body = (f"trigger {base}Trigger on {obj} (after insert, after update) {{\n"
+                    f"    for ({obj} o : Trigger.new) {{\n"
+                    f"        List<{obj}> rel = [SELECT Id FROM {obj} WHERE Id = :o.Id];\n"
+                    f"        {obj} n = new {obj}();\n        insert n;\n    }}\n}}\n")
+        else:                                 # guarded, delegates to a handler
+            body = (f"trigger {base}Trigger on {obj} (after insert) {{\n"
+                    f"    if ({base}Handler.hasRun) return;\n"
+                    f"    {base}Handler.handle(Trigger.new);\n}}\n")
+        triggers.append(md.ApexTriggerMeta(api_name=f"{base}Trigger", object_name=obj,
+                                           events=["after insert"], body=body))
+        if rnd.random() < r * 0.5:            # a second trigger on the same object
+            triggers.append(md.ApexTriggerMeta(
+                api_name=f"{base}AuditTrigger", object_name=obj, events=["before update"],
+                body=f"trigger {base}AuditTrigger on {obj} (before update) {{\n"
+                     f"    if ({base}Handler.hasRun) return;\n}}\n"))
+
+    # --- Permission set for the agent identity
+    user_perms = []
+    if r > 0.55 and rnd.random() < 0.7:
+        user_perms.append("ModifyAllData")
+    if r > 0.3 and rnd.random() < 0.7:
+        user_perms.append("ViewAllData")
+    obj_perms = []
+    for obj in objects[:max(1, int(len(objects) * r))]:
+        obj_perms.append(md.ObjectPerm(object_name=obj, allow_edit=True,
+                                       allow_delete=rnd.random() < r,
+                                       modify_all=rnd.random() < r * 0.5,
+                                       view_all=rnd.random() < r * 0.5))
+    perms.append(md.PermissionSetMeta(api_name="Agent_Integration", label="Agent Integration",
+                                      user_permissions=user_perms, object_perms=obj_perms))
+
+    # --- Record-level signal. Only a demo corpus can supply this without an org.
+    for obj in objects[:3]:
+        stats.append(md.RecordStats(
+            object_name=obj,
+            fill_rate=max(0.05, 1 - r * rnd.uniform(0.5, 1.25)),
+            stale_ratio=min(0.95, r * rnd.uniform(0.4, 1.1)),
+            duplicate_rate=min(0.5, r * rnd.uniform(0.05, 0.35)),
+        ))
+
+    return md.OrgMetadata(flows=flows, apex=apex, triggers=triggers,
+                          permission_sets=perms, record_stats=stats)
+
+
 def gen_org(name, industry, total_fields, defect_ratio, n_objects, mode, seed):
     rnd = random.Random(seed)
     objs = [f"{industry}_{rnd.choice(ENTITIES)}{i+1}__c" for i in range(n_objects)]
@@ -225,9 +313,10 @@ def build_portfolio():
         for _, fn in scanner.RULES:            # D1 rules on real generated fields
             findings.extend(fn(fields))
         objects = sorted({f.object_name for f in fields})
-        findings.extend(rules_ext.dimension_findings(objects, ratio, random.Random(5000 + i)))
+        org_meta = gen_org_metadata(objects, ratio, random.Random(5000 + i))
+        findings.extend(rules_ext.all_findings(org_meta))   # the real D2–D5 packs
         scans.append(scan_result.build(fields, findings, name, scan_mode=m,
-                                       assessed_dims=ALL_DIMS))
+                                       assessed_dims=frozenset({"D1"} | org_meta.assessable_dims())))
     return scans
 
 

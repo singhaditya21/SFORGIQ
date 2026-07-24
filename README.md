@@ -28,10 +28,11 @@ orgiq scan --org my-client-org      # full scan
 | Piece | Status |
 |---|---|
 | Specification (`PRD.md`) | v0.7 — complete, 13 sections + appendices |
-| Scanner (`scanner/`) | 5 real D1 rules (source mode) + experimental D2–D5 rule packs for the demo portfolio |
+| Scanner (`scanner/`) | 20 rules across **D1–D5**, all running on parsed metadata (fields, Flows, Apex, triggers, permission sets) |
+| Tests / CI | 39 pytest tests over the rule packs + scoring, plus an end-to-end fixture smoke test; CI also builds the dashboard |
 | Data generator (`fixtures/`) | Working. CSV generator, messy-org fixture, and a 24-org portfolio generator |
 | Salesforce objects (`salesforce/`) | **Deployed to `orgiq`** (3 objects, 32 fields) + `OrgIQ_Admin` permission set, Connected App, CORS origin |
-| Salesforce data | **Loaded & confirmed** — 24-org portfolio: 24 scans, 120 dimension scores, 1,947 findings across D1–D5 (~4/5 MB) |
+| Salesforce data | **Loaded & confirmed** — 24-org portfolio: 24 scans, 120 dimension scores, 1,976 findings across D1–D5 (~4/5 MB) |
 | Backlog CSV output | Working. Threshold-gated Jira CSV, remediation + provisional effort points |
 | Dashboard (`dashboard/`) | **Live on GitHub Pages.** Portfolio overview + per-org drill-down (radar, trend, backlog); demo + OAuth live mode |
 
@@ -59,7 +60,14 @@ to store the `SFDX_AUTH_URL` secret.
 | D5 | Automation Collision | Will its writes trigger cascading chaos? |
 
 D1 and D3 are agent-native. D2, D4, D5 are pre-existing org health problems that agents
-amplify. Only D1 is implemented.
+amplify.
+
+**All five now have rule packs**, and each is assessed only when the input it needs is
+actually present (`OrgMetadata.assessable_dims`): D1 from field metadata, D3 from Flows
+and Apex, D4 from permission sets, D5 from triggers and record-triggered Flows. **D2
+needs record-level data**, so a source-mode scan of a bare SFDX directory reports it as
+*Not Assessed* rather than guessing. The demo portfolio supplies synthetic inputs for all
+five — the rules are real, the fictional orgs' inputs are generated.
 
 ---
 
@@ -184,6 +192,17 @@ python3 dashboard/export_portfolio.py --target-org orgiq --out dashboard/public/
 
 Single-org flow (fixture → scan → org) is still available via
 `fixtures/gen_messy_org.py`, `orgiq_spike.py --scan-json`, and `salesforce/load_scan.py`.
+
+**Running the tests:**
+
+```
+python3 -m pytest tests/ -q
+```
+
+Covers every rule pack (including regression tests for the false positives the
+spike shipped and fixed), the §4.6 backlog gate, external-id idempotency, the
+readiness bands, and the gate caps. CI runs these plus a full fixture scan and a
+dashboard build on every push.
 
 **Running the scanner:**
 

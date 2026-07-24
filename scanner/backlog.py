@@ -235,6 +235,34 @@ _PLAYBOOK = {
                        "2. Verify an agent-initiated write cannot re-fire the automation.",
         "acceptance": "Automation is recursion-safe; re-scan clears the finding.",
     },
+    "D3.INACTIVE_ACTION": {
+        "epic": "Activate or retire dormant flows", "points": 2,
+        "remediation": "1. Decide whether the flow is still needed.\n"
+                       "2. Activate it (after testing) or delete it so it stops appearing "
+                       "as a candidate action.",
+        "acceptance": "No Draft/Obsolete flow is exposed as an agent action; re-scan clears it.",
+    },
+    "D4.DELETE_GRANTED": {
+        "epic": "Remove unnecessary delete rights", "points": 2,
+        "remediation": "1. Confirm the agent's tasks genuinely require deletes.\n"
+                       "2. If not, revoke delete on the object; prefer soft-delete or status "
+                       "changes for agent-driven flows.",
+        "acceptance": "Delete is granted only where a task requires it; re-scan clears it.",
+    },
+    "D5.SOQL_IN_LOOP": {
+        "epic": "Bulkify automation", "points": 5,
+        "remediation": "1. Hoist the query out of the loop and map results by key.\n"
+                       "2. Add a bulk test (200+ records) that would have caught it.",
+        "acceptance": "No SOQL inside loops on the automation path; re-scan clears it.",
+    },
+    "D5.TRIGGER_AND_FLOW": {
+        "epic": "Resolve trigger/flow ordering collisions", "points": 8,
+        "remediation": "1. Map what the trigger and the record-triggered flow each do.\n"
+                       "2. Consolidate into one automation path, or set explicit flow "
+                       "trigger order and document the contract.\n"
+                       "3. Add a test that writes the record the way an agent would.",
+        "acceptance": "One deterministic automation path per object; re-scan clears it.",
+    },
 }
 
 

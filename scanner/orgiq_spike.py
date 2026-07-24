@@ -19,6 +19,7 @@ from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
 import backlog       # sibling module; scanner/ dir is on sys.path when run directly
+import metadata as sfmeta  # Flow / Apex / trigger / permission-set parsing (D3–D5)
 import scan_result   # sibling module
 
 NS = {"sf": "http://soap.sforce.com/2006/04/metadata"}
@@ -395,6 +396,14 @@ def main():
     for _, fn in RULES:
         findings.extend(fn(fields))
 
+    # D3–D5 run whenever the project actually carries the metadata they need
+    # (Flows, Apex, triggers, permission sets). D2 needs record data, so in
+    # source mode it stays unassessed.
+    import rules_ext                      # imported late: rules_ext needs Finding from here
+    org_meta = sfmeta.parse_project(root)
+    findings.extend(rules_ext.all_findings(org_meta))
+    assessed = frozenset({"D1"} | org_meta.assessable_dims())
+
     md = report(a.name or root.name, fields, findings, a.show)
     if a.out:
         Path(a.out).write_text(md)
@@ -410,7 +419,8 @@ def main():
               f"(severity>=Medium AND confidence>=Medium)")
 
     if a.scan_json:
-        result = scan_result.build(fields, findings, source, scan_mode=a.mode)
+        result = scan_result.build(fields, findings, source, scan_mode=a.mode,
+                                   assessed_dims=assessed)
         scan_result.write_json(result, a.scan_json)
         s = result["scan"]
         print(f"\nwrote {a.scan_json} — composite {s['composite_score']} "

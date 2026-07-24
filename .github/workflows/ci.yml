@@ -1,0 +1,62 @@
+name: CI
+
+# Guards the two things that can silently rot: the rule packs (a regression here
+# turns into wrong findings in someone's backlog) and the dashboard build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scanner:
+    name: Scanner tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pytest
+      - name: Run rule + scoring tests
+        run: python -m pytest tests/ -q
+      - name: Scan the fixture end to end (smoke test)
+        run: |
+          python3 fixtures/gen_messy_org.py --out /tmp/fx/force-app
+          python3 scanner/orgiq_spike.py /tmp/fx/force-app --name CI \
+            --backlog /tmp/backlog.csv --scan-json /tmp/scan.json --show 0
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/scan.json'))
+          dims = {x['dimension'][:2]: x for x in d['dimensions']}
+          assert d['findings'], "scan produced no findings"
+          # the fixture ships Flow/Apex/trigger/permission-set defects on purpose
+          for code in ('D1', 'D3', 'D4', 'D5'):
+              assert dims[code]['assessment_status'] == 'Assessed', f"{code} not assessed"
+          assert dims['D2']['assessment_status'] == 'Not Assessed', "D2 needs record data"
+          print(f"smoke ok: {len(d['findings'])} findings, composite {d['scan']['composite_score']}")
+          PY
+
+  dashboard:
+    name: Dashboard build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: dashboard/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build

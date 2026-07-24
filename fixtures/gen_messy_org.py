@@ -113,6 +113,129 @@ def _esc(s: str) -> str:
     return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
+# --- D3/D4/D5 material: real Flow / Apex / trigger / permission-set files -----
+# Each carries a defect the corresponding rule pack genuinely detects.
+
+FLOWS = {
+    # autolaunched but undocumented -> D3.UNDOCUMENTED_ACTION
+    "Create_Service_Order": """<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Create Service Order</label>
+    <processType>AutoLaunchedFlow</processType>
+    <status>Active</status>
+</Flow>
+""",
+    # draft -> D3.INACTIVE_ACTION
+    "Close_Dormant_Accounts": """<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Close Dormant Accounts</label>
+    <description>Closes billing accounts with no activity for 24 months.</description>
+    <processType>AutoLaunchedFlow</processType>
+    <status>Draft</status>
+</Flow>
+""",
+    # record-triggered on the same object as a trigger -> D5.TRIGGER_AND_FLOW
+    "Billing_Account_After_Save": """<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Billing Account After Save</label>
+    <description>Recalculates balance roll-ups after a billing account is saved.</description>
+    <processType>AutoLaunchedFlow</processType>
+    <status>Active</status>
+    <start>
+        <object>Billing_Account__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+    </start>
+</Flow>
+""",
+}
+
+APEX = {
+    # invocable, no label, and no test class references it
+    # -> D3.UNDOCUMENTED_ACTION + D3.APEX_NO_TESTS
+    "BillingService": """public with sharing class BillingService {
+    @InvocableMethod
+    public static List<String> recalculate(List<Id> accountIds) {
+        List<String> out = new List<String>();
+        for (Id accountId : accountIds) {
+            out.add(String.valueOf(accountId));
+        }
+        return out;
+    }
+}
+""",
+}
+
+TRIGGERS = {
+    # DML + SOQL inside a loop, no recursion guard -> D5.DML_IN_LOOP,
+    # D5.SOQL_IN_LOOP, D5.NO_RECURSION_GUARD
+    "BillingAccountTrigger": """trigger BillingAccountTrigger on Billing_Account__c (after insert, after update) {
+    for (Billing_Account__c acct : Trigger.new) {
+        List<Service_Order__c> orders = [SELECT Id FROM Service_Order__c WHERE Id = :acct.Id];
+        Service_Order__c so = new Service_Order__c();
+        insert so;
+    }
+}
+""",
+    # a second trigger on the same object -> D5.MULTIPLE_TRIGGERS
+    "BillingAccountAuditTrigger": """trigger BillingAccountAuditTrigger on Billing_Account__c (before update) {
+    System.debug('audit');
+}
+""",
+}
+
+PERMISSION_SETS = {
+    # Modify All Data (Critical) + View All Data + over-broad object rights
+    "Agent_Integration": """<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Agent Integration</label>
+    <hasActivationRequired>false</hasActivationRequired>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ModifyAllData</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ViewAllData</name>
+    </userPermissions>
+    <objectPermissions>
+        <object>Billing_Account__c</object>
+        <allowRead>true</allowRead>
+        <allowEdit>true</allowEdit>
+        <allowDelete>true</allowDelete>
+        <modifyAllRecords>true</modifyAllRecords>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <object>Legacy_Customer__c</object>
+        <allowRead>true</allowRead>
+        <allowEdit>true</allowEdit>
+        <allowDelete>true</allowDelete>
+        <modifyAllRecords>false</modifyAllRecords>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+</PermissionSet>
+""",
+}
+
+
+def _write_extras(base: Path) -> int:
+    """Write the Flow/Apex/trigger/permission-set files. Returns file count."""
+    n = 0
+    for name, xml in FLOWS.items():
+        d = base / "flows"; d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.flow-meta.xml").write_text(xml); n += 1
+    for name, src in APEX.items():
+        d = base / "classes"; d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.cls").write_text(src); n += 1
+    for name, src in TRIGGERS.items():
+        d = base / "triggers"; d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.trigger").write_text(src); n += 1
+    for name, xml in PERMISSION_SETS.items():
+        d = base / "permissionsets"; d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.permissionset-meta.xml").write_text(xml); n += 1
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="fixtures/messy_org/force-app")
@@ -131,7 +254,9 @@ def main():
                 FIELD_XML.format(api=api, label=_esc(flabel), type=ftype, desc=desc_xml))
             n_fld += 1
 
-    print(f"wrote {n_obj} objects, {n_fld} fields under {base}")
+    n_extra = _write_extras(Path(a.out) / "main" / "default")
+    print(f"wrote {n_obj} objects, {n_fld} fields, {n_extra} flow/apex/trigger/permset "
+          f"files under {Path(a.out) / 'main' / 'default'}")
 
 
 if __name__ == "__main__":

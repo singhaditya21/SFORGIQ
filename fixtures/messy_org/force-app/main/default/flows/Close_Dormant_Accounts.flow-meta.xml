@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Close Dormant Accounts</label>
+    <description>Closes billing accounts with no activity for 24 months.</description>
+    <processType>AutoLaunchedFlow</processType>
+    <status>Draft</status>
+</Flow>

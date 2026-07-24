@@ -37,12 +37,16 @@ export const RULE_META = {
   'D3.NO_SAFE_ACTIONS': { label: 'No safe actions', epic: 'Build a safe action surface' },
   'D3.UNDOCUMENTED_ACTION': { label: 'Undocumented action', epic: 'Document invocable actions' },
   'D3.APEX_NO_TESTS': { label: 'Untested Apex', epic: 'Cover agent-invoked Apex with tests' },
+  'D3.INACTIVE_ACTION': { label: 'Inactive flow', epic: 'Activate or retire dormant flows' },
   'D4.MODIFY_ALL_DATA': { label: 'Modify All Data', epic: 'Remove Modify All Data from the agent' },
   'D4.VIEW_ALL_DATA': { label: 'View All Data', epic: 'Remove View All Data from the agent' },
   'D4.WIDE_OBJECT_ACCESS': { label: 'Over-broad access', epic: 'Tighten over-broad object access' },
+  'D4.DELETE_GRANTED': { label: 'Delete granted', epic: 'Remove unnecessary delete rights' },
   'D5.DML_IN_LOOP': { label: 'DML in loop', epic: 'Bulkify automation' },
+  'D5.SOQL_IN_LOOP': { label: 'SOQL in loop', epic: 'Bulkify automation' },
   'D5.MULTIPLE_TRIGGERS': { label: 'Multiple triggers', epic: 'Consolidate triggers per object' },
   'D5.NO_RECURSION_GUARD': { label: 'No recursion guard', epic: 'Add recursion guards' },
+  'D5.TRIGGER_AND_FLOW': { label: 'Trigger + flow collision', epic: 'Resolve trigger/flow ordering collisions' },
 }
 export function ruleLabel(ruleId) { return RULE_META[ruleId]?.label ?? ruleId }
 

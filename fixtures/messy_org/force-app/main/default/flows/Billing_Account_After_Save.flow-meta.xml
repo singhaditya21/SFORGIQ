@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Billing Account After Save</label>
+    <description>Recalculates balance roll-ups after a billing account is saved.</description>
+    <processType>AutoLaunchedFlow</processType>
+    <status>Active</status>
+    <start>
+        <object>Billing_Account__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+    </start>
+</Flow>
