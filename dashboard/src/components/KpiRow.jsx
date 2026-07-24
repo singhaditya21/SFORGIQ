@@ -2,9 +2,14 @@ export default function KpiRow({ stats }) {
   const items = [
     { n: stats.orgCount, label: 'orgs scanned' },
     { n: stats.avgComposite, label: 'avg readiness', suffix: '/100' },
+    { n: stats.totalComponents.toLocaleString(), label: 'components' },
     { n: stats.notReady, label: 'not ready', tone: 'bad' },
+    { n: stats.foundational, label: 'foundational' },
+    { n: stats.conditional, label: 'conditional' },
     { n: stats.ready, label: 'ready', tone: 'good' },
     { n: stats.totalFindings.toLocaleString(), label: 'findings' },
+    { n: stats.critical.toLocaleString(), label: 'critical', tone: 'bad' },
+    { n: stats.avgFindings, label: 'avg / org' },
     { n: stats.totalBacklog.toLocaleString(), label: 'backlog items' },
     { n: stats.totalEffort.toLocaleString(), label: 'effort pts', prov: true },
   ]

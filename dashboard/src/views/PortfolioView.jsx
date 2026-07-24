@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import {
-  portfolioStats, bandBreakdown, portfolioFindingBreakdown, orgRows, BAND_META,
+  portfolioStats, bandBreakdown, portfolioFindingBreakdown, dimensionAverages, orgRows, BAND_META,
 } from '../lib/data.js'
 import KpiRow from '../components/KpiRow.jsx'
 import BandBar from '../components/BandBar.jsx'
 import Quadrant from '../components/Quadrant.jsx'
 import FindingAnalytics from '../components/FindingAnalytics.jsx'
+import DimensionAverages from '../components/DimensionAverages.jsx'
 import OrgGrid from '../components/OrgGrid.jsx'
 import OrgsTable from '../components/OrgsTable.jsx'
 
@@ -16,6 +17,7 @@ export default function PortfolioView({ data }) {
   const stats = portfolioStats(scans)
   const bands = bandBreakdown(scans)
   const findingMix = portfolioFindingBreakdown(scans)
+  const dimAvgs = dimensionAverages(scans)
   const rows = orgRows(scans)
   const shown = band ? rows.filter((r) => r.band === band) : rows
 
@@ -42,6 +44,14 @@ export default function PortfolioView({ data }) {
         </section>
 
         <section className="card">
+          <div className="card__head">
+            <h2 className="card__title">Average score by dimension</h2>
+            <span className="card__hint">D1–D5, across the portfolio</span>
+          </div>
+          <DimensionAverages averages={dimAvgs} />
+        </section>
+
+        <section className="card card--wide">
           <div className="card__head">
             <h2 className="card__title">Most common problems</h2>
             <span className="card__hint">findings by type, all orgs</span>

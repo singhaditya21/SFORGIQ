@@ -79,15 +79,42 @@ export function orgRows(scans) {
 export function portfolioStats(scans) {
   const rows = orgRows(scans)
   const n = rows.length || 1
+  const allFindings = scans.flatMap((s) => s.findings)
+  const sev = severityCounts(allFindings)
+  const totalFindings = rows.reduce((s, r) => s + r.findings, 0)
+  const totalComponents = scans.reduce((s, x) => s + (x.scan.componentsScanned || 0), 0)
   return {
     orgCount: rows.length,
     avgComposite: Math.round(rows.reduce((s, r) => s + r.composite, 0) / n),
     notReady: rows.filter((r) => r.band === 'Not Ready').length,
+    foundational: rows.filter((r) => r.band === 'Foundational Work Required').length,
+    conditional: rows.filter((r) => r.band === 'Conditionally Ready').length,
     ready: rows.filter((r) => r.band === 'Ready').length,
-    totalFindings: rows.reduce((s, r) => s + r.findings, 0),
+    totalFindings,
+    critical: sev.Critical,
+    high: sev.High,
+    avgFindings: Math.round(totalFindings / n),
+    totalComponents,
     totalBacklog: rows.reduce((s, r) => s + r.backlog, 0),
     totalEffort: rows.reduce((s, r) => s + r.effort, 0),
+    gated: scans.filter((s) => s.scan.gateApplied).length,
   }
+}
+
+// Average score per dimension across the orgs that assessed it.
+export function dimensionAverages(scans) {
+  const acc = {}
+  for (const s of scans) {
+    for (const d of s.dimensions) {
+      if (d.score == null) continue
+      const a = (acc[d.code] ||= { code: d.code, name: d.name, sum: 0, n: 0 })
+      a.sum += d.score
+      a.n += 1
+    }
+  }
+  return Object.values(acc)
+    .sort((a, b) => a.code.localeCompare(b.code))
+    .map((a) => ({ code: a.code, name: a.name, avg: Math.round(a.sum / a.n), orgs: a.n }))
 }
 
 export function bandBreakdown(scans) {
