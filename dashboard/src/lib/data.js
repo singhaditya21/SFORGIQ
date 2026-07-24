@@ -362,16 +362,23 @@ export function familyOf(scans, scan) {
 // ---- backlog CSV -------------------------------------------------------
 //
 // This is the Jira import file a stakeholder downloads from the dashboard, so
-// it has to BE the scanner's file, not a lookalike: same columns, same order,
-// same header strings, same row shaping as scanner/backlog.py. Anything else
-// and the demo hands out a spreadsheet that Jira's importer cannot map.
-// Keep this block and backlog.py in lockstep.
+// it has to BE the scanner's file, not a lookalike: the same 17 columns in the
+// same order, the same header strings, the same row shaping AND the same
+// epic-then-children structure as scanner/backlog.py. These two implementations
+// drifted once already — the dashboard emitted 9 columns against the scanner's
+// 15 and the demo handed out a spreadsheet Jira could not import as tickets.
+// backlog.py is the source of truth; keep this block in lockstep with it, down
+// to the wording of the epic summary and description.
 
-// Verbatim from backlog.BACKLOG_COLUMNS.
+// Verbatim from backlog.BACKLOG_COLUMNS. "Epic Link" sits immediately after
+// "Epic Name" because Jira's importer reads Epic Name off the epic row only and
+// links children through Epic Link — a child carrying an Epic Name imports as a
+// second epic instead of as that epic's child.
 const BACKLOG_COLUMNS = [
   'External ID',
   'Issue Type',
   'Epic Name',
+  'Epic Link',
   'Summary',
   'Priority',
   'Story Points (provisional)',
@@ -392,10 +399,78 @@ const JIRA_PRIORITY = { Critical: 'Highest', High: 'High', Medium: 'Medium', Low
 const SEV_RANK = { Critical: 4, High: 3, Medium: 2, Low: 1 }
 const CONF_RANK = { High: 3, Medium: 2, Low: 1 }
 const DEFAULT_FINDING_SOURCE = 'OrgIQ'
+// backlog._SCOPE_CAP — objects named in an epic summary before "+N more".
+const SCOPE_CAP = 4
 
 // Python compares strings by code point; localeCompare does not, and the row
 // order is part of matching the scanner's output.
 function cmp(a, b) { return a < b ? -1 : a > b ? 1 : 0 }
+
+// backlog._distinct — first occurrence wins, order preserved.
+function distinct(values) {
+  const out = []
+  for (const v of values) if (v && !out.includes(v)) out.push(v)
+  return out
+}
+
+// The exported finding carries the org's own epic / acceptance / source once the
+// scan has been loaded into Salesforce; RULE_META (a cache of backlog._PLAYBOOK)
+// covers findings exported before those fields existed.
+function epicOf(f) { return f.epic || (RULE_META[f.ruleId] ?? UNKNOWN_RULE).epic }
+function acceptanceOf(f) {
+  return f.acceptanceCriteria || (RULE_META[f.ruleId] ?? UNKNOWN_RULE).acceptance
+}
+function findingSourceOf(f) { return f.source || DEFAULT_FINDING_SOURCE }
+
+// Epic external ids are SHA-1, and they must come out byte-identical to the
+// scanner's or re-importing a dashboard export next to a CLI export creates a
+// second epic for the same work instead of upserting the one everybody is
+// tracking. Web Crypto's digest is async while this runs inside a click handler
+// that returns a string, so SHA-1 is inlined here rather than awaited.
+function sha1Hex(text) {
+  const bytes = new TextEncoder().encode(text)      // hash UTF-8 bytes, as Python does
+  const padded = bytes.length + 1 + 8
+  const total = padded + ((64 - (padded % 64)) % 64)
+  const msg = new Uint8Array(total)
+  msg.set(bytes)
+  msg[bytes.length] = 0x80
+  const view = new DataView(msg.buffer)
+  const bits = bytes.length * 8
+  view.setUint32(total - 8, Math.floor(bits / 4294967296))
+  view.setUint32(total - 4, bits >>> 0)
+
+  let h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476, h4 = 0xC3D2E1F0
+  const w = new Uint32Array(80)
+  for (let i = 0; i < total; i += 64) {
+    for (let j = 0; j < 16; j += 1) w[j] = view.getUint32(i + j * 4)
+    for (let j = 16; j < 80; j += 1) {
+      const n = w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16]
+      w[j] = ((n << 1) | (n >>> 31)) >>> 0
+    }
+    let a = h0, b = h1, c = h2, d = h3, e = h4
+    for (let j = 0; j < 80; j += 1) {
+      let f, k
+      if (j < 20) { f = (b & c) | (~b & d); k = 0x5A827999 }
+      else if (j < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1 }
+      else if (j < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC }
+      else { f = b ^ c ^ d; k = 0xCA62C1D6 }
+      const t = (((a << 5) | (a >>> 27)) + f + e + k + w[j]) >>> 0
+      e = d; d = c; c = ((b << 30) | (b >>> 2)) >>> 0; b = a; a = t
+    }
+    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0
+    h3 = (h3 + d) >>> 0; h4 = (h4 + e) >>> 0
+  }
+  return [h0, h1, h2, h3, h4].map((x) => x.toString(16).padStart(8, '0')).join('')
+}
+
+// backlog._epic_external_id — hashes (epic, source) only, so the epic survives
+// its children changing between re-scans.
+function epicExternalId(epic, source) {
+  return `OIQ-EPIC-${sha1Hex(`${epic}|${source}`).slice(0, 12)}`
+}
+// backlog._epic_name — org-qualified, because the portfolio download merges
+// every org into one file and Jira keys epics by name.
+function epicNameOf(epic, source) { return `${epic} — ${source}` }
 
 function componentTypeOf(f) {
   // Prefer the stored value; fall back to backlog._component_type's rule
@@ -403,11 +478,74 @@ function componentTypeOf(f) {
   return f.componentType || (f.component.includes('[') ? 'CustomField group' : 'CustomField')
 }
 
+// backlog._scope_of — reduce a component of any shape to the object (or
+// artefact) a reader recognises: Account.Region__c and Account [12 fields] both
+// give Account, Agent_PS:Case gives Case, BillingService.cls gives
+// BillingService. Not objectOf() above: that one predates the perm-set and Apex
+// component shapes the D3–D5 packs emit.
+function scopeOf(f) {
+  let head = (f.component || '').split(' [')[0].trim()
+  const colon = head.indexOf(':')
+  if (colon !== -1) head = head.slice(colon + 1).trim()   // perm set : object
+  if (head.endsWith('.cls')) return head.slice(0, -'.cls'.length)
+  return head.includes('.') ? head.slice(0, head.indexOf('.')) : head
+}
+
+// backlog._scope_phrase — "Account, Contact, Case, Opportunity +3 more", in the
+// children's own order so the most severe object is named first.
+function scopePhrase(children) {
+  const seen = distinct(children.map(scopeOf))
+  if (!seen.length) return 'components with no object recorded'
+  const shown = seen.slice(0, SCOPE_CAP).join(', ')
+  const extra = seen.length - SCOPE_CAP
+  return extra > 0 ? `${shown} +${extra} more` : shown
+}
+
+const epicPoints = (children) => children.reduce((s, f) => s + (f.effortPoints || 0), 0)
+// An epic is as urgent as its worst child...
+function epicSeverity(children) {
+  return children.reduce((a, f) => ((SEV_RANK[f.severity] ?? 0) > (SEV_RANK[a.severity] ?? 0) ? f : a)).severity
+}
+// ...and only as trustworthy as its shakiest one. Computed, not read off the
+// last child: children sort by severity first, so the tail is the least severe
+// finding, which is not necessarily the least confident.
+function epicConfidence(children) {
+  return children.reduce((a, f) => ((CONF_RANK[f.confidence] ?? 0) < (CONF_RANK[a.confidence] ?? 0) ? f : a)).confidence
+}
+
+// backlog._epic_description — the rollup a reviewer reads before deciding to
+// schedule the whole epic: what it is, how big, how much provisional effort,
+// and what "done" means for its children.
+function epicDescription(scan, epic, children) {
+  const n = children.length
+  const rules = distinct(children.map((f) => f.ruleId))
+  const acceptanceByRule = new Map()
+  for (const f of children) if (!acceptanceByRule.has(f.ruleId)) acceptanceByRule.set(f.ruleId, acceptanceOf(f))
+  return [
+    `Epic: ${epic} (${children[0].dimension})`,
+    `Severity: ${epicSeverity(children)}   Confidence: ${epicConfidence(children)}`,
+    '',
+    `Items: ${n}`,
+    `Objects: ${scopePhrase(children)}`,
+    `Rules: ${rules.join(', ')}`,
+    `Provisional effort: ${epicPoints(children)} point(s) across ${n} child item(s)`,
+    '',
+    'These findings share one fix, so they are imported as one epic rather '
+      + 'than as loose tickets (PRD §4.6). Each child below carries its own '
+      + 'component, evidence and remediation steps; the epic closes when every '
+      + 'child clears a re-scan.',
+    '',
+    'Acceptance criteria (shared by the children):',
+    ...rules.map((ruleId) => `- ${ruleId}: ${acceptanceByRule.get(ruleId)}`),
+    '',
+    `Scan source: ${scan.targetOrg}`,
+    `Finding source: ${distinct(children.map(findingSourceOf)).join(', ')}`,
+    'Effort points are PROVISIONAL (uncalibrated, PRD §8/§11).',
+  ].join('\n')
+}
+
 function backlogDescription(scan, f) {
-  const meta = RULE_META[f.ruleId] ?? UNKNOWN_RULE
-  // The exported finding carries the org's own epic/acceptance/source once the
-  // scan has been loaded into Salesforce; RULE_META covers older exports.
-  const acceptance = f.acceptanceCriteria || meta.acceptance
+  const acceptance = acceptanceOf(f)
   return [
     `Rule: ${f.ruleId} (${f.dimension} — Grounding Quality)`,
     `Severity: ${f.severity}   Confidence: ${f.confidence}`,
@@ -425,7 +563,7 @@ function backlogDescription(scan, f) {
     '',
     'Blast radius: n/a (source mode — no dependency graph)',
     `Scan source: ${scan.targetOrg}`,
-    `Finding source: ${f.source || DEFAULT_FINDING_SOURCE}`,
+    `Finding source: ${findingSourceOf(f)}`,
     'Effort points are PROVISIONAL (uncalibrated, PRD §8/§11).',
   ].join('\n')
 }
@@ -433,12 +571,15 @@ function backlogDescription(scan, f) {
 // Keyed by column name, then emitted in BACKLOG_COLUMNS order — the same
 // DictWriter shape backlog.to_rows uses, so a column can never silently drift
 // out of position the way a positional array lets it.
-function backlogRow(scan, f) {
-  const meta = RULE_META[f.ruleId] ?? UNKNOWN_RULE
+//
+// backlog._task_row. Epic Name is blank on a child and its parent's name goes in
+// Epic Link; only the flat (no-epic) export puts the epic back on the row.
+function taskRow(scan, f, epicName, epicLink) {
   return {
     'External ID': f.externalId,
     'Issue Type': 'Task',
-    'Epic Name': f.epic || meta.epic,
+    'Epic Name': epicName,
+    'Epic Link': epicLink,
     Summary: `[${f.ruleId}] ${f.component}: ${f.evidence}`.slice(0, 200),
     Priority: JIRA_PRIORITY[f.severity] ?? 'Medium',
     'Story Points (provisional)': f.effortPoints,
@@ -450,8 +591,37 @@ function backlogRow(scan, f) {
     Severity: f.severity,
     Confidence: f.confidence,
     'Rule Maturity': f.ruleMaturity || 'experimental',
-    Source: f.source || DEFAULT_FINDING_SOURCE,
+    Source: findingSourceOf(f),
     Description: backlogDescription(scan, f),
+  }
+}
+
+// backlog._epic_row. `children` arrives in the order it will be written in, most
+// severe first, so the scope list and the rule list read top-down the way the
+// file does.
+function epicRow(scan, epic, children) {
+  const rules = distinct(children.map((f) => f.ruleId))
+  const dimension = children[0].dimension   // epics never span dimensions by construction
+  const severity = epicSeverity(children)
+  const n = children.length
+  return {
+    'External ID': epicExternalId(epic, scan.targetOrg),
+    'Issue Type': 'Epic',
+    'Epic Name': epicNameOf(epic, scan.targetOrg),
+    'Epic Link': '',                        // an epic has no parent
+    Summary: `${epic} — ${n} ${n === 1 ? 'item' : 'items'} across ${scopePhrase(children)}`.slice(0, 200),
+    Priority: JIRA_PRIORITY[severity] ?? 'Medium',
+    'Story Points (provisional)': epicPoints(children),
+    Labels: ['OrgIQ', dimension, 'epic', ...rules.map((r) => r.replace(/\./g, '_'))].join(' '),
+    'Salesforce Component': scopePhrase(children),
+    'Component Type': 'Epic',
+    'Rule ID': rules.join(', '),
+    Dimension: dimension,
+    Severity: severity,
+    Confidence: epicConfidence(children),
+    'Rule Maturity': 'experimental',
+    Source: distinct(children.map(findingSourceOf)).join(', '),
+    Description: epicDescription(scan, epic, children),
   }
 }
 
@@ -461,8 +631,13 @@ function csvCell(v) {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-export function backlogCsv(scan, findings) {
-  const rows = findings
+// backlog.to_rows. With epics the file is a structure, not a list: each epic
+// that has at least one gated finding emits an Epic row followed immediately by
+// its own children, epics ordered by their most severe child and children
+// most-severe-first inside the epic. `includeEpics: false` gives the flat
+// one-row-per-finding export back.
+function backlogRows(scan, findings, includeEpics) {
+  const ordered = findings
     // The §4.6 gate again, in case a caller hands us everything: an observation
     // that failed the gate must never arrive as a ticket.
     .filter((f) => f.emitsToBacklog)
@@ -470,10 +645,37 @@ export function backlogCsv(scan, findings) {
       || (CONF_RANK[b.confidence] ?? 0) - (CONF_RANK[a.confidence] ?? 0)
       || cmp(a.ruleId, b.ruleId)
       || cmp(a.component, b.component))
-    .map((f) => {
-      const row = backlogRow(scan, f)
-      return BACKLOG_COLUMNS.map((c) => csvCell(row[c])).join(',')
-    })
+
+  if (!includeEpics) return ordered.map((f) => taskRow(scan, f, epicOf(f), ''))
+
+  // A Map preserves insertion order, so epics come out ordered by their most
+  // severe finding and each epic's children keep the severity order they were
+  // sorted into — no second sort, and nothing to drift out of step with it.
+  const clusters = new Map()
+  for (const f of ordered) {
+    const epic = epicOf(f)
+    if (!clusters.has(epic)) clusters.set(epic, [])
+    clusters.get(epic).push(f)
+  }
+
+  const rows = []
+  for (const [epic, children] of clusters) {
+    rows.push(epicRow(scan, epic, children))
+    const epicLink = epicNameOf(epic, scan.targetOrg)
+    // Epic Name stays empty on children: Jira's importer treats a row carrying
+    // one as an epic in its own right, and the parent's name in Epic Link is
+    // what actually creates the link.
+    for (const f of children) rows.push(taskRow(scan, f, '', epicLink))
+  }
+  return rows
+}
+
+// Note for callers counting tickets off this file: epic rows are scaffolding,
+// so the row count is no longer the ticket count (backlog.count_tickets makes
+// the same distinction). The gated-finding count is still the number of tickets.
+export function backlogCsv(scan, findings, { includeEpics = true } = {}) {
+  const rows = backlogRows(scan, findings, includeEpics)
+    .map((row) => BACKLOG_COLUMNS.map((c) => csvCell(row[c])).join(','))
   // CRLF-terminated rows, trailing terminator included (the Description cell
   // keeps its own bare newlines inside the quotes) — RFC 4180, and byte-for-byte
   // what Python's csv writer produces.

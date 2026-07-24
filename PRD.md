@@ -5,9 +5,9 @@
 | | |
 |---|---|
 | **Status** | Draft for review — specification with validation evidence |
-| **Version** | 0.7 |
+| **Version** | 0.8 |
 | **Author** | Aditya Singh |
-| **Last updated** | 2026-07-23 |
+| **Last updated** | 2026-07-24 |
 | **License** | Apache 2.0 (proposed — see §9) |
 | **Repo posture** | Public, open source, contributions invited |
 
@@ -15,6 +15,7 @@
 
 **Changelog**
 
+- **v0.8** — **Honesty audit.** This document had drifted into stating unbuilt things in the present tense, which is the one failure mode a tool positioned on not overclaiming cannot afford. A status legend was added (below) and applied to every claim found to overstate the code. Corrected: the §5.6 harness example's numbers are labelled invented, not measured; §5.8's LLM token budget and §8.1's token targets are marked as targets for an enrichment tier that does not exist; `token_cost` removed from the §7.4 scan schema (`OrgIQ_Scan__c` has no such field); "Grounding Efficiency Ratio" marked as never computed; §5.3 split — Semantic Density and a grounding-payload estimate are now genuinely computed by `scanner/density.py` and are stated as measured in normalised words and characters, **not** model tokens, while Selection Precision and Turns-to-Resolution are marked as targets. Bulk safety (SOQL/DML in loops) moved from D3 to D5 to match the rule IDs the code emits. Org and Hybrid modes marked as labels only — no org introspection happens today. Free-tool ingestion marked roadmap-only, with the finding-provenance groundwork that exists recorded. Also tagged, in the same pass: §4.1's five dimension lists rule by rule; §4.4's finding schema against the fields actually emitted; §4.6's idempotency formula, which the code had diverged from and where the code was right; §7.2.4's coverage thresholds; and §7.7's stack, which listed five dependencies the standard-library-only scanner does not have. Nothing was removed from the roadmap and no ambition was walked back — the point of this pass is that a reader can tell which sentences already run.
 - **v0.7** — Consolidated into a single document. Spike executed against a public corpus; results, defects found, and implications recorded in §13. D1.NUMBERED_FAMILY added as a rule. Tier 2 corpus limitation identified and recorded (§6.4.1). GRND-7 rescoped. Spike implementation included as Appendix C.
 - **v0.6** — §5 re-anchored on the two-surface model after correcting a wrong assumption about how Agentforce grounds. Selection Precision replaces raw token cost as the primary metric; cost impact re-derived through turns-to-resolution and labelled a hypothesis pending measurement (§5.7). Thesis updated (§1). GRND-7 and GRND-8 added.
 - **v0.5** — Source mode added as a first-class input path (§7.2). Capability-declaring rules and mechanical degradation. Partial-coverage dimensions excluded from the composite (§7.2.4, §4.2). UC-7 CI gate added. SRC workstream added to roadmap.
@@ -22,6 +23,20 @@
 - **v0.3** — Defect-first rule authoring discipline defined (§6.3.7). Fixture realism ceiling addressed via a three-tier validation model and rule maturity ladder (§6.4). Rule confidence now gated by validation evidence (§4.5). Roadmap extended with the VAL workstream (§11).
 - **v0.2** — Seed environment specified as a first-class test fixture (§6.3). Target environment changed from persistent Developer Edition to scratch orgs. Evaluation prompt provenance resolved and moved out of open questions. False-positive measurement method defined (§8.1). Roadmap items identified (§11).
 - **v0.1** — Initial draft.
+
+**How to read this document — status tags**
+
+This is a PRD, so most of it is specification: the model, the argument, the intent. But it now sits next to a working repository, and a reader must be able to tell which sentences describe code that runs today. Where a claim could reasonably be mistaken for a description of current behaviour, it carries one of:
+
+| Tag | Meaning |
+|---|---|
+| **[implemented]** | Code in this repository does this today, and the tag names the module or field that does it. |
+| **[partial]** | Something real exists, but narrower than the surrounding prose implies. The tag says what is missing. |
+| **[target]** | Design intent, a number to hit, or a planned capability. **No code does this yet.** |
+
+Untagged prose is specification and should be read as such. §11 remains the roadmap of record; these tags exist so the distinction survives at the level of individual sentences, not just section headings.
+
+One standing clarification, because it recurs. The scanner is standard-library-only and calls no model. Every number this tool reports in "tokens" is a **deterministic estimate** computed from metadata text — normalised word counts and character length — not a tokenizer output and never a billed token count. Those figures are for comparison (before vs after a remediation, org vs org). Wherever this document discusses *model* tokens, it is describing an enrichment tier that does not exist.
 
 ---
 
@@ -69,9 +84,9 @@ OrgIQ occupies neither position. It is a **zero-install, read-only, point-in-tim
 
 **It can run with no org access at all.** Source mode (§7.2) analyses an SFDX repository directly — no authentication, no credentials, no API consumption. This clears an adoption bar nothing else in the category clears, and makes the tool viable inside a client's CI pipeline before any commercial relationship exists.
 
-**The output is work, not a dashboard.** Every finding carries evidence, blast radius, remediation steps, an effort estimate, and acceptance criteria. The primary artifact is a CSV that imports into Jira or Azure DevOps, not a visualisation.
+**The output is work, not a dashboard. [implemented]** Every finding carries evidence, remediation steps, an effort estimate and acceptance criteria, and the primary artifact is a Jira-importable CSV, not a visualisation. Two caveats a reader should have up front: the effort points come from a **provisional, uncalibrated** table and say so on every row, and **blast radius is not yet real** — the field is emitted as `0` pending a dependency graph, with report and dashboard reference counts standing in as a severity-weighting proxy (§7.4). An Azure DevOps emitter is **[target]** (EMIT-6).
 
-**It measures selection economics.** No other tool quantifies whether an agent can reliably choose the right field and action from what an org exposes, or treats that as an optimisation target with a measured accuracy constraint. See §5.
+**It measures selection economics. [partial]** No other tool treats an agent's ability to choose the right field and action as a measurable optimisation target. What is measured today is the *metadata* side of that: semantic density and a before/after grounding payload estimate, both deterministic (§5.3). The accuracy constraint — the harness that proves selection still works after an optimisation — is designed but **not built** (§5.6). Until it is, this differentiator is a better-instrumented proxy than the rest of the category has, not the measured accuracy claim §5 ultimately makes.
 
 ### 2.3 Explicit non-goals
 
@@ -132,39 +147,46 @@ Each dimension answers one question about whether an agent can operate on this o
 **D1 — Grounding Quality**
 *Can a language model correctly understand this schema?*
 
-- Field description coverage on agent-exposed objects
-- Help text coverage on user-facing fields
-- API name interpretability — abbreviations, opaque identifiers, `Field1__c` patterns
-- Semantic duplication — multiple fields carrying the same business meaning
-- Numbered field families — repeating groups presenting N near-identical retrieval candidates, typically with identical descriptions
-- Low-information descriptions — text restating the label, adding payload without disambiguation (§5.5)
-- Picklist value hygiene — undocumented codes, orphaned values, inconsistent casing
-- Object-level description coverage
+D1 is the most complete dimension in the code — it is the one the spike was built to prove.
+
+- Field description coverage on agent-exposed objects — **[implemented]** `D1.MISSING_DESCRIPTION`, and coverage is reported alongside *effective* coverage and semantic density (§5.3)
+- API name interpretability — abbreviations, opaque identifiers, `Field1__c` patterns — **[implemented]** `D1.CRYPTIC_API_NAME`
+- Semantic duplication — multiple fields carrying the same business meaning — **[implemented]** `D1.SEMANTIC_DUPLICATE`, two-tier, with the weaker tier capped at Low confidence
+- Numbered field families — repeating groups presenting N near-identical retrieval candidates, typically with identical descriptions — **[implemented]** `D1.NUMBERED_FAMILY`
+- Low-information descriptions — text restating the label, adding payload without disambiguation (§5.5) — **[implemented]** `D1.LOW_INFO_DESCRIPTION`
+- Fields nothing looks at — payload a retriever carries and a planner must rule out for no business reason — **[implemented]** `D1.UNREFERENCED_FIELD`, gated on report and dashboard metadata actually having been parsed, and never emitted at High confidence
+- Help text coverage on user-facing fields — **[target]** help text is parsed but no rule scores it
+- Picklist value hygiene — undocumented codes, orphaned values, inconsistent casing — **[target]**
+- Object-level description coverage — **[target]** assessment is field-level today
 
 ---
 
 **D2 — Data Foundation**
 *Is the data underneath trustworthy enough to ground on?*
 
-- Field population rate, measured on records modified in the trailing twelve months
-- Identity key completeness — email, phone, external ID fill rates across Lead, Contact, Account. This is the direct predictor of Data Cloud identity resolution quality.
-- Duplicate rate on core objects
-- Stale record ratio
-- Validation rule bypass patterns and required-but-empty fields
+- Field population rate, measured on records modified in the trailing twelve months — **[partial]** `D2.LOW_FILL_RATE` exists and runs, but only when record statistics are handed to it
+- Duplicate rate on core objects — **[partial]** `D2.DUPLICATE_RECORDS`, same condition
+- Stale record ratio — **[partial]** `D2.STALE_DATA`, same condition
+- Identity key completeness — email, phone, external ID fill rates across Lead, Contact, Account. This is the direct predictor of Data Cloud identity resolution quality. — **[target]**
+- Validation rule bypass patterns and required-but-empty fields — **[target]**
 
 *Note: D2 is the only dimension requiring record data access. It degrades gracefully — see §7.6.*
+
+**D2 never runs on a real scan today.** The rules are written and tested, but their only input is record-level statistics, which a bare SFDX directory does not contain and which nothing currently fetches — that needs org mode (§7.2). D2 is consequently reported as `Not Assessed` and excluded from the composite on every source-mode scan. Where you see D2 scored, it is the demo portfolio in `scanner/scan_portfolio.py`, which supplies synthetic record statistics.
 
 ---
 
 **D3 — Action Surface**
 *Can the agent safely do anything, or only talk?*
 
-- Inventory of invocable Apex methods and Flows
-- Bulk safety — SOQL and DML in loops, governor limit exposure
-- Idempotency signals — does re-invocation duplicate records
-- Error handling presence and quality on invocable paths
-- Test coverage measured **on invocable paths specifically**, not org-wide average
-- Deterministic failure modes — does the action fail predictably
+- Inventory of invocable Apex methods and Flows — **[implemented]** `D3.NO_SAFE_ACTIONS`, `D3.UNDOCUMENTED_ACTION`, `D3.INACTIVE_ACTION` in `scanner/rules_ext.py`
+- Governor limit exposure on invocable paths — **[target]**
+- Idempotency signals — does re-invocation duplicate records — **[target]**
+- Error handling presence and quality on invocable paths — **[target]**
+- Test coverage measured **on invocable paths specifically**, not org-wide average — **[partial]** `D3.APEX_NO_TESTS` checks that *some* test class references an invocable class; it does not measure coverage, which needs org mode
+- Deterministic failure modes — does the action fail predictably — **[target]**
+
+*Moved to D5.* Bulk safety — SOQL and DML inside loops — was listed here through v0.7. The code assesses it under **D5 Automation Collision** as `D5.SOQL_IN_LOOP` and `D5.DML_IN_LOOP`, because the rule reads trigger bodies and the risk it describes is an agent's write setting off unbulkified automation. D5 is where it stays; this entry is kept only so the change is visible to anyone reading against an older copy.
 
 Most orgs score very low here. The automation exists but was written for human-triggered, single-record, happy-path execution. This dimension usually generates the largest backlog.
 
@@ -173,11 +195,11 @@ Most orgs score very low here. The automation exists but was written for human-t
 **D4 — Permission Blast Radius**
 *What can the agent reach if something goes wrong?*
 
-- Profiles and permission sets carrying View All / Modify All at object or system level
-- Field-level security gaps on sensitive fields
-- Sharing model complexity and manual share dependencies
-- Guest and community user exposure paths
-- Delta between the intended agent user's permissions and a least-privilege baseline
+- Profiles and permission sets carrying View All / Modify All at object or system level — **[implemented]** `D4.MODIFY_ALL_DATA` (Critical, and it trips the §4.2 composite cap), `D4.VIEW_ALL_DATA`, `D4.WIDE_OBJECT_ACCESS`, plus `D4.DELETE_GRANTED`. Permission sets only; profiles are not yet parsed
+- Field-level security gaps on sensitive fields — **[target]**
+- Sharing model complexity and manual share dependencies — **[target]**
+- Guest and community user exposure paths — **[target]**
+- Delta between the intended agent user's permissions and a least-privilege baseline — **[target]** requires org mode to know which user the agent runs as
 
 An agent inherits the permissions of the user it runs as. In regulated sectors this is an audit finding waiting to be written.
 
@@ -186,11 +208,12 @@ An agent inherits the permissions of the user it runs as. In regulated sectors t
 **D5 — Automation Collision**
 *Will the agent's writes trigger cascading chaos?*
 
-- Trigger and record-triggered flow count per object
-- Order-of-execution risk where multiple automations write to the same fields
-- Recursive and cascading automation chains
-- Async job density and queue pressure
-- Governor limit headroom on high-traffic objects
+- Trigger and record-triggered flow count per object — **[implemented]** `D5.MULTIPLE_TRIGGERS`, `D5.TRIGGER_AND_FLOW`
+- Bulk safety in automation — SOQL and DML inside loops — **[implemented]** `D5.SOQL_IN_LOOP`, `D5.DML_IN_LOOP` (**moved here from D3**; this is where the code emits them)
+- Order-of-execution risk where multiple automations write to the same fields — **[partial]** collisions are detected at object granularity; which *fields* each automation writes is not yet parsed
+- Recursive and cascading automation chains — **[partial]** `D5.NO_RECURSION_GUARD` detects the absence of a static guard on a trigger; the cascade itself is not traced
+- Async job density and queue pressure — **[target]**
+- Governor limit headroom on high-traffic objects — **[target]**
 
 ---
 
@@ -244,6 +267,8 @@ last_seen_scan        scan id
 status                open | resolved | suppressed
 ```
 
+**[partial]** — `OrgIQ_Finding__c` and the scan JSON implement most of this: `external_finding_id`, `rule_id`, `dimension`, `severity`, `confidence`, `component_type`, `component_api_name`, `evidence`, `remediation`, `acceptance_criteria`, `effort_points`, `status`, plus `epic`, `emits_to_backlog`, `rule_maturity` and `source` (the engine that raised it — §7.3). Not yet emitted: `evidence_query` and `evidence_payload` are collapsed into a single human-readable `evidence` string; `blast_radius_count` is always `0` pending a dependency graph; `rubric_version` lives on the scan rather than the finding; and `first_seen_scan` / `last_seen_scan` await EMIT-8, which is what would make `status` mean anything beyond its constant `Open`.
+
 ### 4.5 Confidence, and why it is mandatory
 
 **Decision: every finding carries a confidence attribute.** Static analysis of a Salesforce org produces false positives — a field that appears unused may be referenced in a managed package, a formula, or an integration outside the dependency graph. A tool that presents low-confidence findings with the same authority as high-confidence ones destroys its own credibility on first contact with a knowledgeable architect.
@@ -254,11 +279,17 @@ A finding's confidence is additionally **capped by the maturity of the rule that
 
 ### 4.6 Backlog conversion
 
-**Decision: threshold-gated emission.** All findings are recorded. Only findings meeting `severity >= Medium AND confidence >= Medium` auto-emit as backlog items. Everything else lands in the observations appendix. Without this gate, a large org produces a four-thousand-ticket dump that nobody imports.
+**Decision: threshold-gated emission. [implemented]** All findings are recorded. Only findings meeting `severity >= Medium AND confidence >= Medium` auto-emit as backlog items — `emits_to_backlog()` in `scanner/backlog.py`, with the gated-out count reported as observations. Without this gate, a large org produces a four-thousand-ticket dump that nobody imports.
 
-Findings are clustered into epics before emission — "Retire 383 unreferenced fields on Account and Contact" is one epic with 383 child items, not 383 loose tickets.
+Findings are clustered into epics before emission — "Retire 383 unreferenced fields on Account and Contact" is one epic with 383 child items, not 383 loose tickets. **[implemented]** (EMIT-5, landed ahead of its v0.3 slot). Every rule maps to an epic, remediation and acceptance criteria in the `_PLAYBOOK` table in `scanner/backlog.py`. The CSV is a structure rather than a list: each epic with at least one gated finding emits an `Epic` row carrying the cluster's rolled-up scope, severity and effort, followed immediately by its child `Task` rows. Epic names are org-qualified so a merged portfolio file cannot collide two orgs' epics, and children link upward through `Epic Link` rather than carrying `Epic Name` themselves, which is what Jira's importer expects. Ticket counts reported to the user count children only — epic rows are scaffolding, not work.
 
-**Idempotency.** `finding_id = hash(rule_id + component_api_name + org_id)`. Re-scanning updates existing tickets, closes resolved findings, and creates only what is new. This is what converts a one-off audit into a trackable burn-down, and the burn-down is what gets funded.
+**Idempotency. [implemented]** Every row carries a deterministic external id so re-import updates rather than duplicates. The formula in code is not the one this section stated through v0.7; the code is correct and the spec is now updated to match it:
+
+- `sha1(rule_id | component | detail | source)`, truncated, prefixed `OIQ-`.
+- `source` stands in for `org_id`, because source mode has no org id — re-scanning the same repository yields the same ids.
+- `detail` joins the hash **only** for rules where detail is *identity* rather than *state* — duplicate clusters, numbered families, multi-trigger findings — since two such findings on one component are otherwise indistinguishable. For every other rule detail is a snapshot of mutable text like `label='X'`, and hashing it would re-mint the ticket id the moment somebody edited the label, i.e. the moment they started fixing the finding, orphaning the tracked ticket and destroying the burn-down.
+
+**[target]** — the burn-down itself. "Re-scanning updates existing tickets, closes resolved findings, and creates only what is new" describes EMIT-8 (v1.0). The stable id makes it possible; nothing performs the update/close cycle today, and every finding is emitted with `status = Open`.
 
 ### 4.7 Published, versioned rubric
 
@@ -299,12 +330,23 @@ The same holds on the action surface: two similarly-described invocable actions 
 
 ### 5.3 Metrics
 
-| Metric | Definition | Surface |
-|---|---|---|
-| **Selection Precision** | Proportion of evaluation prompts where the correct field or action is chosen | Both |
-| **Context Payload** | Tokens consumed by the candidate definition set at planning time | Action, primarily |
-| **Semantic Density** | Proportion of metadata tokens carrying disambiguating information | Both |
-| **Turns-to-Resolution** | Mean user turns to complete a task | Both |
+| Metric | Definition | Surface | Status |
+|---|---|---|---|
+| **Semantic Density** | Share of description words that add something the field's own label and API name do not already carry | Both | **[implemented]** |
+| **Context Payload** | Size of the candidate definition set a retriever would carry | Action, primarily | **[partial]** |
+| **Selection Precision** | Proportion of evaluation prompts where the correct field or action is chosen | Both | **[target]** |
+| **Turns-to-Resolution** | Mean user turns to complete a task | Both | **[target]** |
+
+**What is computed today.** `scanner/density.py` computes two of these deterministically, with no model involved:
+
+- `semantic_density(fields)` normalises each field's description, subtracts every word already present in its label or API name plus a fixed generic-word list, and pools the remainder across the corpus. A description that merely restates its label scores near zero — which is the entire point (§5.5). Fields with no description are excluded from both sides of the ratio, so this measures the quality of the text that exists, not how much of it there is; coverage is reported separately. It lands on the scan record as `Semantic_Density__c`.
+- `grounding_payload(fields)` estimates the payload a retriever carries for those fields today, and re-estimates it after two of the tool's own plays land — `D1.LOW_INFO_DESCRIPTION` (delete text that only restates the label) and `D1.SEMANTIC_DUPLICATE` (collapse a cluster to its canonical field). It reuses the rule functions themselves rather than re-deriving their conditions, so the projection cannot drift from what the backlog tickets. It lands as `Est_Grounding_Tokens__c` and `Est_Remediated_Tokens__c`.
+
+**Unit, stated plainly.** Both figures are denominated in **normalised words and characters, not model tokens.** The estimator takes the larger of `words × 1.3` and `characters / 4`; no tokenizer runs and no model is consulted. The `est_` prefix on the schema fields is deliberate. These numbers are valid for comparison — the same org before and after a remediation, or one org against another under the same estimator — and are not valid as a cost or invoicing figure. Real model-token accounting would arrive only with the enrichment tier in §5.8, which does not exist.
+
+**Why Context Payload is only partial.** §5.1 says payload cost scales primarily on the *action* surface — action definitions and parameter schemas entering the planning context every turn. What `grounding_payload()` measures is the *grounding* surface: field text a retriever would carry. The surface where this metric matters most is the one not yet measured.
+
+**Selection Precision and Turns-to-Resolution are not computed by anything in this repository.** There is no evaluation prompt set, no harness runner, and no agent under test. They remain the metrics this dimension is ultimately judged on — see §5.6 and GRND-4/GRND-6 — but no number for either has been produced.
 
 ### 5.4 The economic bridge
 
@@ -335,18 +377,25 @@ This means **documentation coverage is a misleading metric.** An org can raise d
 
 The optimisation objective is two-sided: **payload down, disambiguating information up.**
 
-### 5.6 The harness
+### 5.6 The harness — **[target]**
+
+**Nothing in this section is built.** There is no evaluation prompt set, no runner, no retriever under test and no verdict logic in the repository. GRND-4 and GRND-5 build it. The design below stands; the numbers in it do not.
 
 No recommendation is issued without evidence that selection still works. This is non-negotiable and is what makes the dimension defensible rather than a counting exercise.
 
 For each assessed object and each topic action set, the harness runs a fixed evaluation set of 30–50 representative prompts against both raw and optimised metadata, measuring selection precision and, where an agent is available to exercise, turns-to-resolution.
 
 ```
+ILLUSTRATIVE OUTPUT FORMAT — every number below is invented.
+No harness produced these; they are not a measurement of any org.
+
 Account:  selection precision  0.71 → 0.93   (+0.22)
-          context payload      4,180 → 890 tokens
+          context payload      4,180 → 890
           semantic density     0.31 → 0.88
           VERDICT: accept
 ```
+
+The payload figures previously carried a `tokens` unit here, which read as a measured model-token count. It was neither measured nor model tokens. The only payload numbers the tool actually produces are the deterministic estimates described in §5.3, and they appear in the scan record, not in a harness verdict.
 
 If selection precision degrades beyond a configured tolerance, the optimisation is **rejected** and reported as rejected.
 
@@ -363,20 +412,22 @@ Two experiments settle it, both cheap:
 
 Until experiment 2 returns, no client-facing material asserts a cost saving. Selection precision is reported as measured; cost impact is reported as modelled. See GRND-7 and GRND-8.
 
-### 5.8 The tool's own token economics
+### 5.8 The tool's own token economics — **[target]**
 
-The analyser must be cheap enough that the scan can be given away. Target: **under 150,000 LLM input tokens for a full scan, under 10,000 for a delta scan.**
+**There is no LLM enrichment tier.** No model SDK, no API key handling, no prompt template and no tokenizer exists anywhere in the repository; the scanner runs on the standard library alone and consumes **zero** model tokens per scan. This section is a budget for a tier scheduled at LLM-1 through LLM-6, not a report on one.
 
-Achieved by:
+The analyser must be cheap enough that the scan can be given away. Target, once the tier exists: **under 150,000 LLM input tokens for a full scan, under 10,000 for a delta scan.** These are design constraints chosen up front. Neither has been measured, because there is nothing yet to measure.
 
-1. **Deterministic detection first.** Rule packs find violations. The LLM never sees a clean component. This alone removes roughly 95% of volume.
-2. **Fingerprint deduplication.** Findings hash to `rule_id + component_type + pattern`. Four hundred instances of the same finding shape cost one LLM call and four hundred applications. The cache persists across orgs.
-3. **Symbol tables, not source.** Apex is sent as a signature graph — class, methods, SOQL line references, complexity, callers — not as a body. Roughly 8,000 tokens becomes 200.
+To be achieved by:
+
+1. **Deterministic detection first.** Rule packs find violations. The LLM would never see a clean component. *(The deterministic detection half of this is real — it is the whole scanner. The volume-reduction percentage is an estimate of what it would save a tier that does not exist.)*
+2. **Fingerprint deduplication.** Findings hash to `rule_id + component_type + pattern`. Four hundred instances of the same finding shape would cost one LLM call and four hundred applications. The cache would persist across orgs.
+3. **Symbol tables, not source.** Apex would be sent as a signature graph — class, methods, SOQL line references, complexity, callers — not as a body. The "roughly 8,000 tokens becomes 200" ratio previously stated here is an illustrative guess, not a measurement.
 4. **Canonical compact representation.** Metadata XML is normalised to tabular form before anything downstream sees it.
 5. **Tiered models.** A small model handles triage and classification; the expensive model is reserved for the top findings and the executive narrative.
 6. **Delta scanning.** Subsequent scans process only metadata whose `LastModifiedDate` has moved.
 
-Token consumption per scan is itself reported as a product metric.
+Once the tier exists, token consumption per scan is itself reported as a product metric. Today no scan record carries a token-cost figure and none should — see §7.4.
 
 ---
 
@@ -590,15 +641,21 @@ Each stage writes to the canonical store. Stages are independently runnable, whi
 
 ### 7.2 Input modes
 
-OrgIQ supports two first-class input paths. Neither is a degraded form of the other; they answer different questions and are available at different points in an engagement.
+OrgIQ specifies two first-class input paths. Neither is a degraded form of the other; they answer different questions and are available at different points in an engagement.
 
-**Source mode.** Reads an SFDX project directory. No org connection, no authentication, no API consumption. Analyses metadata as committed to version control.
+**Source mode — [implemented].** Reads an SFDX project directory. No org connection, no authentication, no API consumption. Analyses metadata as committed to version control. This is the only path the scanner actually executes.
 
-**Org mode.** Connects read-only to a live org. Adds the dependency graph, usage signals, record data, and org-native health reports.
+**Org mode — [target].** *Specified: connects read-only to a live org, adding the dependency graph, usage signals, record data, and org-native health reports.* **Not built.** No code in this repository authenticates to, queries, or introspects a Salesforce org.
 
-**Hybrid.** Source for metadata, org for enrichment. The preferred configuration where both are available — fast metadata parsing from the repository, dependency and usage signals from the org.
+**Hybrid — [target].** *Specified: source for metadata, org for enrichment — the preferred configuration where both are available.* Also not built, for the same reason.
+
+> **What `--mode` does today.** `scanner/orgiq_spike.py` accepts `--mode Source|Org|Hybrid`, and every value produces an identical scan: the flag is recorded verbatim on the scan record as `Scan_Mode__c` and changes nothing about what is read or how it is analysed. Passing `--mode Org` does not connect to an org. It is a provenance label on the output, reserved so that org-mode scans are distinguishable once org mode exists. Read the "Org" column of the tables below as the specification for that future path, not as a description of two working modes.
+
+The one real branch in the code is not mode but **evidence**: `OrgMetadata.assessable_dims()` reports a dimension as assessable only when the project actually carries its inputs — D3 when Flows or Apex are present, D4 when permission sets are, D5 when triggers or record-triggered Flows are, D2 only when record statistics are supplied, which a bare SFDX directory never provides. A dimension with no inputs is reported as not assessed and excluded from the composite (§7.2.4). That degradation is real and running; it is driven by what is in the directory, not by the mode flag.
 
 #### 7.2.1 Signal availability
+
+*The **Org** column is specification, not availability — see the `--mode` note in §7.2. Every ✓ that appears only in that column is a signal nothing currently reads.*
 
 | Signal | Source | Org |
 |---|---|---|
@@ -630,9 +687,13 @@ OrgIQ supports two first-class input paths. Neither is a degraded form of the ot
 
 D1 being fully source-capable is why v0.1 can ship source-mode-first, and why the fixture's D1 rules can be validated against generated source without deploying to an org at all.
 
-#### 7.2.3 Capability resolution
+*Again, the **Org** column is the specification for an unbuilt path. And note a live discrepancy in the Source column: the rule packs for D3, D4 and D5 do run in source mode and are genuinely partial in exactly the ways stated, but `scanner/scan_result.py` currently reports each of them as `Assessed` at 100% rule coverage rather than as partial. Closing that is §7.2.4's outstanding work, not a documentation fix.*
 
-Degradation is mechanical, not hand-coded per mode. Each rule declares the signals it requires:
+#### 7.2.3 Capability resolution — **[partial]**
+
+Degradation is mechanical, not hand-coded per mode — that principle holds and is implemented, but through `OrgMetadata.assessable_dims()` in `scanner/metadata.py`, which resolves capability at **dimension** granularity from what the parsed project contains. The finer-grained, per-rule YAML declaration below is **[target]**; no rule pack YAML and no resolver exists, and the rules are Python functions today. One rule already carries its own evidence gate in code: `D1.UNREFERENCED_FIELD` returns nothing at all unless report or dashboard metadata was parsed, on the grounds that absence of evidence is not evidence of absence.
+
+The intended declaration form:
 
 ```yaml
 - rule_id: D1.SEMANTIC_DUPLICATE
@@ -648,51 +709,60 @@ At scan time the resolver computes which rules can run given the signals actuall
 
 A dimension scored from 40% of its rules is not a lower score — it is an **unreliable** score, and presenting it alongside fully-assessed dimensions is misleading.
 
-- Every dimension score is reported with a **rule coverage percentage**
-- Dimensions below **70% coverage** are marked `partially assessed` and **excluded from the composite**
-- The report states which dimensions were excluded and which signals were missing
+- Every dimension score is reported with a **rule coverage percentage** — **[partial]** the field exists and is emitted (`Rule_Coverage__c`), but it is currently binary: 100% for an assessed dimension, 0% for an unassessed one. It is not yet computed from how many of a dimension's rules could run.
+- Dimensions below **70% coverage** are marked `partially assessed` and **excluded from the composite** — **[target]** the threshold is not implemented. `Assessment_Status__c` today has two states, `Assessed` and `Not Assessed`, with no `Partially Assessed` in between.
+- The report states which dimensions were excluded and which signals were missing — **[implemented]** unassessed dimensions carry a `Missing_Signals__c` string naming what was absent, and are excluded from the composite.
 
-A source-mode scan therefore typically returns a composite over D1 alone, with D3, D4 and D5 reported as partially assessed and D2 as not assessed. That is an honest output. A single blended number computed across full and partial dimensions is not.
+A source-mode scan therefore typically returns a composite over D1 alone, with D3, D4 and D5 reported as partially assessed and D2 as not assessed. That is an honest output. A single blended number computed across full and partial dimensions is not. **[partial]** — the exclusion half of this is real and running: a dimension with no inputs is scored `None`, marked `Not Assessed`, and kept out of the composite. The gradation between "fully assessed" and "not assessed" is what is missing.
 
 ### 7.3 Extract
 
-| Source | Provides |
-|---|---|
-| `sf` CLI / Metadata API | Component inventory |
-| Tooling API — `MetadataComponentDependency` | Dependency graph |
-| Tooling API — `EntityDefinition`, `FieldDefinition` | Schema, descriptions, FLS |
-| Salesforce Optimizer | Pre-computed health findings |
-| Security Health Check | Baseline security posture |
-| Salesforce Code Analyzer (PMD, Graph Engine) | Static analysis findings |
-| Report & Dashboard metadata | Business-visible field references |
-| Setup Audit Trail | Change velocity and concentration |
-| Licensed platform exports (where present) | Ingested, not duplicated |
+| Source | Provides | Status |
+|---|---|---|
+| SFDX project directory on disk | Fields, Flows, Apex, triggers, permission sets | **[implemented]** `scanner/metadata.py`, `scanner/orgiq_spike.py` |
+| Report & Dashboard metadata | Business-visible field references | **[implemented]** parsed from the repo; gates `D1.UNREFERENCED_FIELD` and weights D1 findings by blast radius |
+| `sf` CLI / Metadata API | Component inventory | **[target]** |
+| Tooling API — `MetadataComponentDependency` | Dependency graph | **[target]** |
+| Tooling API — `EntityDefinition`, `FieldDefinition` | Schema, descriptions, FLS | **[target]** |
+| Salesforce Optimizer | Pre-computed health findings | **[target]** EXT-6 |
+| Security Health Check | Baseline security posture | **[target]** EXT-6 |
+| Salesforce Code Analyzer (PMD, Graph Engine) | Static analysis findings | **[target]** EXT-7 |
+| Setup Audit Trail | Change velocity and concentration | **[target]** |
+| Licensed platform exports (where present) | Ingested, not duplicated | **[target]** |
 
 All sources are free or already licensed by the client.
 
-### 7.4 Canonical store
+**Free-tool ingestion is roadmap-only.** OrgIQ does not read an Optimizer report, does not call Security Health Check, and does not invoke Code Analyzer. No parser and no invocation for any of the three exists. §2.3's "defers to Health Check and Code Analyzer; ingests their output rather than reimplementing it" is a scope commitment about what OrgIQ will *not* rebuild, and should be read that way — not as a claim that the ingestion is wired up.
 
-DuckDB, local file, five core tables:
+**What does exist is the groundwork that keeps such ingestion additive.** Every emitted finding record carries a `Source` naming the engine that raised it — `Source__c` on `OrgIQ_Finding__c`, `source` in the scan JSON, and a `Source` column in the backlog CSV — defaulting to `OrgIQ` for the native rules. The emitters read that value off a finding when one is present, so ingested findings can join the same record set, the same gate, and the same backlog without a schema change, and a reviewer triaging a ticket can see which engine made the claim before trusting it. The field is there; nothing writes anything other than `OrgIQ` to it yet.
+
+### 7.4 Canonical store — **[target]**
+
+The local DuckDB store is not built (STORE-1, STORE-2). Today a scan produces a JSON document from `scanner/scan_result.py` and, optionally, records in the three Salesforce custom objects that mirror it. Specified shape, five core tables:
 
 ```
-scan            scan_id, org_id, timestamp, rubric_version, token_cost
+scan            scan_id, org_id, timestamp, rubric_version
 component       component_id, type, api_name, attributes
 dependency_edge from_component, to_component, dependency_type
 usage_signal    component_id, signal_type, value, observed_at
 finding         (schema per §4.4)
 ```
 
-The dependency graph is loaded into NetworkX for blast-radius computation.
+`token_cost` was listed on the `scan` table through v0.7 and has been removed. It described a per-scan model-token spend that nothing produces, and no such field exists on the deployed object.
+
+**The scan record that exists today** is `OrgIQ_Scan__c` (and its JSON equivalent), with: `External_Scan_Id__c`, `Target_Org__c`, `Scan_Mode__c`, `Rubric_Version__c`, `Composite_Score__c`, `Readiness_Band__c`, `Components_Scanned__c`, `Semantic_Density__c`, `Est_Grounding_Tokens__c`, `Est_Remediated_Tokens__c`, `Gate_Applied__c`, `Gate_Reason__c`, `Scan_Timestamp__c`. The two `Est_` fields are the deterministic §5.3 estimates, **not** model tokens and not a cost — the prefix is load-bearing and should not be dropped if the field is ever surfaced in a report.
+
+The dependency graph is to be loaded into NetworkX for blast-radius computation — **[target]**. There is no dependency graph in source mode, and every finding currently emits `blast_radius = 0`. The blast-radius signal that *is* implemented is a different and weaker one: `apply_report_weighting()` in `scanner/orgiq_spike.py` counts how many committed reports and dashboards reference a field and raises the severity of findings on heavily-referenced fields, which is a proxy for dependency count, not a dependency count.
 
 ### 7.5 Detect, Enrich, Score, Emit
 
-**Detect** — YAML rule packs, fully deterministic, zero LLM involvement. Rule packs are the primary community contribution surface.
+**Detect** — fully deterministic, zero LLM involvement. **[implemented]** as Python rule packs across D1–D5 (`scanner/orgiq_spike.py`, `scanner/rules_ext.py`). The YAML form, which is what makes rule packs the primary community contribution surface, is **[target]**.
 
-**Enrich** — optional LLM tier for clustering, narrative, and estimation. Fingerprint-cached, tiered by model, and swappable to a local model.
+**Enrich** — optional LLM tier for clustering, narrative, and estimation. Fingerprint-cached, tiered by model, and swappable to a local model. **[target]** — not built; see §5.8.
 
-**Score** — applies the versioned rubric and gate rules.
+**Score** — applies the rubric and gate rules. **[partial]** — scoring, bands and both §4.2 gate caps run (`scanner/scan_result.py`, `RUBRIC_VERSION = "0.2.0-spike"`), but the weights are provisional constants in code rather than a published YAML rubric (§4.7 is therefore **[target]**).
 
-**Emit** — static HTML report, Jira/ADO CSV, JSON, and Markdown.
+**Emit** — **[implemented]** Jira-importable CSV (`scanner/backlog.py`) and JSON (`scanner/scan_result.py`), each finding carrying evidence, remediation steps, provisional effort points and acceptance criteria. ADO and Markdown emitters are **[target]** (EMIT-6). The static HTML report is superseded in practice by the dashboard in `dashboard/`.
 
 ### 7.6 Security and deployment posture
 
@@ -706,7 +776,11 @@ This section is load-bearing for regulated-sector adoption.
 
 ### 7.7 Stack
 
-Python 3.11+, `sf` CLI, DuckDB, Pydantic, NetworkX, Jinja2, pytest. All free, no hosted dependencies.
+**Today — [implemented].** Python and the standard library. Nothing else. The scanner has no third-party runtime dependency at all, no `requirements.txt`, and no lockfile; `pytest` is the only development dependency, and CI runs 3.11.
+
+**Specified — [target].** `sf` CLI, DuckDB, Pydantic, NetworkX, Jinja2 arrive with org mode, the canonical store and the HTML report respectively. All free, no hosted dependencies.
+
+The zero-dependency posture is worth keeping deliberately rather than by accident: it is what makes the claim in §7.6 that nothing leaves the machine trivially auditable, and it is why the scanner drops into a client CI pipeline without a package-approval conversation.
 
 ---
 
@@ -714,19 +788,21 @@ Python 3.11+, `sf` CLI, DuckDB, Pydantic, NetworkX, Jinja2, pytest. All free, no
 
 ### 8.1 Product
 
-| Metric | Target |
-|---|---|
-| Full scan wall-clock, 5,000-component org | < 30 minutes |
-| LLM tokens, full scan | < 150,000 |
-| LLM tokens, delta scan | < 10,000 |
-| False positive rate on high-confidence findings | < 10%, measured per-rule against the seed fixture manifest (§6.3.6) |
-| Backlog CSV import success into Jira/ADO | 100%, no manual cleanup |
+Every row below is a **target**. None has been measured; the column says what would count as success, not what was observed.
+
+| Metric | Target | Measurable today? |
+|---|---|---|
+| Full scan wall-clock, 5,000-component org | < 30 minutes | Yes — not yet timed at that scale |
+| LLM tokens, full scan | < 150,000 | **No.** No LLM tier exists (§5.8); actual consumption is zero by construction, which is not a passing score — it is an absent feature |
+| LLM tokens, delta scan | < 10,000 | **No** — same reason, and delta scanning is also unbuilt |
+| False positive rate on high-confidence findings | < 10%, measured per-rule against the seed fixture manifest (§6.3.6) | Partly — the fixture and rules exist; the per-rule precision measurement does not |
+| Backlog CSV import success into Jira/ADO | 100%, no manual cleanup | Yes for Jira — the CSV is emitted; the import has not been run end to end. No ADO emitter exists |
 
 ### 8.2 Engagement
 
 - Proportion of scans converting to a funded remediation phase
 - Elapsed time from scan completion to approved backlog
-- Measured grounding token reduction achieved post-remediation
+- Grounding payload reduction achieved post-remediation — measured as the **[implemented]** deterministic estimate of §5.3 (normalised words and characters), compared before and against a re-scan. Not a model-token measurement and must not be quoted as a spend reduction.
 - Readiness index delta across re-scans
 
 ### 8.3 Open source
@@ -926,7 +1002,7 @@ Work items by workstream. Items marked **†** were surfaced by the v0.2 seed-fi
 | EMIT-2 | Threshold-gated backlog conversion | v0.1 |
 | EMIT-3 | Jira CSV emitter | v0.1 |
 | EMIT-4 | Static HTML report | v0.1 |
-| EMIT-5 | Epic clustering | v0.3 |
+| EMIT-5 | Epic clustering (**landed early — §4.6**) | v0.3 |
 | EMIT-6 | ADO, JSON, Markdown emitters | v0.3 |
 | EMIT-7 | Effort calibration table (provisional) | v0.3 |
 | EMIT-8 | Idempotent re-scan — update, close, create | v1.0 |
@@ -1104,15 +1180,16 @@ One is a false positive: `MailingStreet__c` / `MailingStreet2__c` is an address-
 
 ## Appendix A — Glossary
 
-| Term | Definition |
-|---|---|
-| **Grounding payload** | The schema context supplied to a language model so it can reason about an object |
-| **Grounding Efficiency Ratio** | Optimised grounding tokens divided by raw grounding tokens |
-| **Semantic Density** | Proportion of grounding tokens carrying disambiguating information |
-| **Blast radius** | Count of components dependent on a given component |
-| **Gate rule** | A rule capping the composite score when a critical condition is met |
-| **Rule pack** | A versioned YAML collection of deterministic detection rules |
-| **Delta scan** | A scan processing only metadata modified since the previous scan |
+| Term | Definition | Status |
+|---|---|---|
+| **Grounding payload** | The schema context supplied to a language model so it can reason about an object | **[implemented]** as an estimate — `grounding_payload()` in `scanner/density.py`, reported as `Est_Grounding_Tokens__c` / `Est_Remediated_Tokens__c` |
+| **Semantic Density** | Share of description words carrying information the field's own label and API name do not already give away. Counted in normalised words, **not** model tokens | **[implemented]** `semantic_density()` in `scanner/density.py`; `Semantic_Density__c` |
+| **Grounding Efficiency Ratio** | Optimised grounding payload divided by raw grounding payload | **[target]** — defined here since v0.1 and never computed. The current/remediated pair above is the closest thing that exists, and the two should be reconciled or this term retired |
+| **Blast radius** | Count of components dependent on a given component | **[target]** — needs a dependency graph. Every finding currently emits `blast_radius = 0`. Report and dashboard reference counts are used as a severity-weighting proxy (§7.4) |
+| **Gate rule** | A rule capping the composite score when a critical condition is met | **[implemented]** both §4.2 caps, with `Gate_Applied__c` / `Gate_Reason__c` |
+| **Rule pack** | A versioned collection of deterministic detection rules | **[implemented]** as Python (D1–D5); the versioned **YAML** form is **[target]** |
+| **Delta scan** | A scan processing only metadata modified since the previous scan | **[target]** |
+| **Estimated token** | This document's unit for payload figures: `max(words × 1.3, characters / 4)` over normalised metadata text. Deterministic, comparable across scans, and never a billed or model-produced count | **[implemented]** `estimate_tokens()` in `scanner/density.py` |
 
 ## Appendix B — References
 
@@ -1123,6 +1200,8 @@ One is a false positive: `MailingStreet__c` / `MailingStreet2__c` is an address-
 ## Appendix C — Spike Implementation
 
 Source mode, five D1 rules, standard library only. Executed against the corpus in §13.
+
+> **This is a snapshot, not the current scanner.** It is preserved because §13's validation evidence was produced by *this* code and the results are only interpretable alongside it. The scanner has since moved on — `D1.UNREFERENCED_FIELD`, report-reference parsing and blast-radius weighting were added to D1, and the D2–D5 packs were written. Read `scanner/` for what runs today; read this for what §13 measured.
 
 ```python
 #!/usr/bin/env python3

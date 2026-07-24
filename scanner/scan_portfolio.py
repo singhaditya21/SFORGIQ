@@ -398,16 +398,35 @@ ORG_COLUMN = "Target Org"
 PORTFOLIO_COLUMNS = [ORG_COLUMN] + backlog.BACKLOG_COLUMNS
 
 
+def _count_epics(rows) -> int:
+    """Epic rows are scaffolding, not work — counted apart from the tickets so
+    neither number silently absorbs the other (backlog.count_tickets is the
+    matching side of this)."""
+    return sum(1 for r in rows if r.get("Issue Type") == "Epic")
+
+
 def write_portfolio_backlog(orgs, path) -> tuple:
     """Write ONE Jira-importable CSV covering every org in the portfolio.
 
-    Reuses backlog.to_rows verbatim — same §4.6 gate, same columns, same
-    external ids — so a consultant importing the merged file gets exactly the
-    rows the per-org exports would have produced, without merging 24 files by
-    hand. External ids already hash the scan source, i.e. the org name, so rows
-    from different orgs cannot collide on upsert.
+    Reuses backlog.to_rows verbatim — same §4.6 gate, same columns, same epic
+    clustering, same external ids — so a consultant importing the merged file
+    gets exactly the rows the per-org exports would have produced, without
+    merging 24 files by hand. The file keeps to_rows' structure: within each
+    org, every epic is followed immediately by its own children, so the merged
+    export reads top-down as org -> epic -> tasks rather than as ~1,900 loose
+    tickets.
 
-    Returns (rows_written, observations_held_back).
+    Each org is serialised with its own name as the scan source, which is what
+    keeps 24 orgs apart in one file:
+
+      - task external ids hash the source, so two orgs' identical findings get
+        different ids and cannot collide on upsert;
+      - epic external ids hash (epic, source) for the same reason;
+      - Epic Name is org-qualified ("Retire unreferenced fields — Old Mill
+        Bancorp"). Jira keys epics by name, so unqualified names would collapse
+        every org's copy of an epic into one and hang 24 orgs' children off it.
+
+    Returns (epic_count, ticket_count, observations_held_back).
     """
     rows, observations = [], 0
     for name, findings in orgs:
@@ -421,7 +440,7 @@ def write_portfolio_backlog(orgs, path) -> tuple:
         w = csv.DictWriter(fh, fieldnames=PORTFOLIO_COLUMNS)
         w.writeheader()
         w.writerows(rows)
-    return len(rows), observations
+    return _count_epics(rows), backlog.count_tickets(rows), observations
 
 
 def main():
@@ -429,8 +448,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--backlog", default=None,
                     help="write ONE portfolio-wide Jira-importable CSV covering "
-                         "every org, each row tagged with the org it came from "
-                         "(threshold-gated: severity>=Medium AND confidence>=Medium)")
+                         "every org — epics followed by their child tasks, each "
+                         "row tagged with the org it came from (threshold-gated: "
+                         "severity>=Medium AND confidence>=Medium)")
     a = ap.parse_args()
 
     scans, orgs = build_portfolio()
@@ -463,10 +483,17 @@ def main():
               f"— trim SPECS sizes before loading")
 
     if a.backlog:
-        written, observations = write_portfolio_backlog(orgs, a.backlog)
-        print(f"\nwrote {a.backlog} — {written} backlog item(s) across "
-              f"{len(orgs)} orgs, {observations} observation(s) held back by the "
-              f"§4.6 gate (severity>=Medium AND confidence>=Medium)")
+        epics, tickets, observations = write_portfolio_backlog(orgs, a.backlog)
+        # Tickets and epics are reported apart: "backlog items" has always meant
+        # findings that became work, and folding the epic scaffolding into that
+        # number would inflate the size of the engagement on paper.
+        print(f"\nwrote {a.backlog} — {tickets} backlog item(s) in {epics} "
+              f"epic(s) across {len(orgs)} orgs, {observations} observation(s) "
+              f"held back by the §4.6 gate (severity>=Medium AND "
+              f"confidence>=Medium)")
+        print(f"  {epics + tickets} CSV row(s): within each org, every epic is "
+              f"followed by its own children, and Epic Names are org-qualified "
+              f"so two orgs' epics cannot merge on import")
 
     print("\n  per-scan:")
     for s in scans:
