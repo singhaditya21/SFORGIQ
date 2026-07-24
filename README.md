@@ -6,6 +6,9 @@ in a prioritised, importable tech backlog rather than a dashboard.
 
 Last updated: 24 July 2026
 
+**Live dashboard:** https://singhaditya21.github.io/SFORGIQ/ — demo mode, showing a
+real scan loaded into the OrgIQ Salesforce org.
+
 ---
 
 ## What it does, in one line
@@ -26,11 +29,11 @@ orgiq scan --org my-client-org      # full scan
 |---|---|
 | Specification (`PRD.md`) | v0.7 — complete, 13 sections + appendices |
 | Scanner (`scanner/`) | Working spike. 5 D1 rules, source mode, runs on real metadata |
-| Data generator (`fixtures/`) | Working. Generates CSV with controlled distributions |
-| Salesforce objects (`salesforce/`) | Built, XML-validated, **deployed to `orgiq`** (3 objects, 32 fields) |
-| Dashboard | Not started |
+| Data generator (`fixtures/`) | Working. CSV generator + a messy-org metadata fixture |
+| Salesforce objects (`salesforce/`) | **Deployed to `orgiq`** (3 objects, 32 fields) + `OrgIQ_Admin` permission set |
+| Salesforce data | **Loaded & confirmed** — 1 scan, 5 dimension scores, 48 findings |
 | Backlog CSV output | Working. Threshold-gated Jira CSV, remediation + provisional effort points |
-| HTML report | Not started |
+| Dashboard (`dashboard/`) | **Live on GitHub Pages.** React app, demo mode reads real org data |
 
 **Environment done:** Salesforce CLI installed (macOS arm64), Developer Edition org
 created, `sf org login web --alias orgiq` complete.
@@ -126,13 +129,13 @@ Neither resembles a fifteen-year-old enterprise org.
 
 ## Immediate next steps
 
-1. ~~**Deploy the objects**~~ — **done.** Deployed to `orgiq` via `sf project deploy start --source-dir salesforce/force-app --target-org orgiq` (needs `sfdx-project.json`, now at repo root).
+1. ~~**Deploy the objects**~~ — **done.** Deployed to `orgiq` via `sf project deploy start --source-dir salesforce/force-app --target-org orgiq` (needs `sfdx-project.json`, now at repo root). Access is granted by the `OrgIQ_Admin` permission set.
 2. ~~**Backlog CSV emitter**~~ — **done.** `scanner/backlog.py`; run with `--backlog out.csv` (see below).
-3. **HTML report** — the scan output as something shareable
-4. **Dashboard demo mode** — static site reading bundled sample data, no auth
-5. **OAuth live mode** — Connected App + CORS, then real data
+3. ~~**Shareable report**~~ — **done, as a React dashboard** (superseded the flat HTML report). Lives in `dashboard/`, deployed to GitHub Pages.
+4. ~~**Dashboard demo mode**~~ — **done.** `dashboard/public/sample-scan.json` is exported from the org; the public site reads it, no auth.
+5. **OAuth live mode** — Connected App + CORS + PKCE so the dashboard can query the org live per logged-in user. Not started.
 
-Step 3 completes the first end-to-end slice (scan → shareable output). Everything after is additive.
+The first end-to-end slice is complete: messy org → scan → Salesforce → backlog CSV + live dashboard. Step 5 (live per-user data) and the D2–D5 rule packs are what's next.
 
 ---
 
@@ -146,10 +149,27 @@ SFORGIQ/
   scanner/
     orgiq_spike.py       working scanner, 5 D1 rules, stdlib only
     backlog.py           Jira-importable backlog CSV emitter (threshold-gated)
+    scan_result.py       assembles the full scan record set (Salesforce schema)
   fixtures/
-    seed_data.py         fixture data generator
+    seed_data.py         fixture data generator (D2 record data)
+    gen_messy_org.py     generates the messy-org metadata fixture
+    messy_org/           the generated defect-catalogue fixture (3 objects, 42 fields)
   salesforce/
-    force-app/           3 custom objects, 32 fields (deployed to orgiq)
+    force-app/           3 custom objects, 32 fields, OrgIQ_Admin permission set
+    load_scan.py         idempotent Bulk-API loader (scan result JSON -> org)
+  dashboard/             React app; deployed to GitHub Pages (demo mode)
+    export_demo_data.py  exports a scan from the org into public/sample-scan.json
+  .github/workflows/     GitHub Pages build + deploy
+```
+
+**End-to-end run** (fixture → scan → Salesforce → dashboard data):
+
+```
+python3 fixtures/gen_messy_org.py --out fixtures/messy_org/force-app
+python3 scanner/orgiq_spike.py fixtures/messy_org/force-app --name "TelcoCorp CRM (demo)" \
+    --backlog backlog.csv --scan-json scan.json
+python3 salesforce/load_scan.py scan.json --target-org orgiq
+python3 dashboard/export_demo_data.py --target-org orgiq --out dashboard/public/sample-scan.json
 ```
 
 **Running the scanner:**
