@@ -28,12 +28,12 @@ orgiq scan --org my-client-org      # full scan
 | Piece | Status |
 |---|---|
 | Specification (`PRD.md`) | v0.7 — complete, 13 sections + appendices |
-| Scanner (`scanner/`) | Working spike. 5 D1 rules, source mode, runs on real metadata |
-| Data generator (`fixtures/`) | Working. CSV generator + a messy-org metadata fixture |
-| Salesforce objects (`salesforce/`) | **Deployed to `orgiq`** (3 objects, 32 fields) + `OrgIQ_Admin` permission set |
-| Salesforce data | **Loaded & confirmed** — 24-org portfolio: 24 scans, 120 dimension scores, 1,827 findings (~80% of DE storage) |
+| Scanner (`scanner/`) | 5 real D1 rules (source mode) + experimental D2–D5 rule packs for the demo portfolio |
+| Data generator (`fixtures/`) | Working. CSV generator, messy-org fixture, and a 24-org portfolio generator |
+| Salesforce objects (`salesforce/`) | **Deployed to `orgiq`** (3 objects, 32 fields) + `OrgIQ_Admin` permission set, Connected App, CORS origin |
+| Salesforce data | **Loaded & confirmed** — 24-org portfolio: 24 scans, 120 dimension scores, 1,947 findings across D1–D5 (~4/5 MB) |
 | Backlog CSV output | Working. Threshold-gated Jira CSV, remediation + provisional effort points |
-| Dashboard (`dashboard/`) | **Live on GitHub Pages.** React portfolio dashboard — overview + per-org drill-down, reads real org data |
+| Dashboard (`dashboard/`) | **Live on GitHub Pages.** Portfolio overview + per-org drill-down (radar, trend, backlog); demo + OAuth live mode |
 
 **Environment done:** Salesforce CLI installed (macOS arm64), Developer Edition org
 created, `sf org login web --alias orgiq` complete.
@@ -133,9 +133,9 @@ Neither resembles a fifteen-year-old enterprise org.
 2. ~~**Backlog CSV emitter**~~ — **done.** `scanner/backlog.py`; run with `--backlog out.csv` (see below).
 3. ~~**Shareable report**~~ — **done, as a React dashboard** (superseded the flat HTML report). Lives in `dashboard/`, deployed to GitHub Pages.
 4. ~~**Dashboard demo mode**~~ — **done.** `dashboard/public/sample-scan.json` is exported from the org; the public site reads it, no auth.
-5. **OAuth live mode** — Connected App + CORS + PKCE so the dashboard can query the org live per logged-in user. Not started.
+5. ~~**OAuth live mode**~~ — **done.** A PKCE public-client Connected App + CORS origin are deployed; the dashboard's "Connect Salesforce" button runs the browser OAuth flow and reads the org live. (The interactive sign-in is the org owner's action and only works from the Pages origin.)
 
-The first end-to-end slice is complete: messy org → scan → Salesforce → backlog CSV + live dashboard. Step 5 (live per-user data) and the D2–D5 rule packs are what's next.
+The full slice is live: portfolio → Salesforce → backlog CSV + dashboard (demo **and** OAuth live mode), across all five dimensions. Remaining: real (non-synthetic) D2–D5 assessment against org metadata, effort calibration, and the public-corpus validation from the PRD roadmap.
 
 ---
 
