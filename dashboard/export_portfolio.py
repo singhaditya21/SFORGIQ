@@ -55,7 +55,7 @@ def main():
         "SELECT Name, External_Scan_Id__c, Target_Org__c, Scan_Mode__c, "
         "Rubric_Version__c, Composite_Score__c, Readiness_Band__c, "
         "Components_Scanned__c, Semantic_Density__c, Est_Grounding_Tokens__c, "
-        "Est_Remediated_Tokens__c, Gate_Applied__c, Gate_Reason__c, Scan_Timestamp__c "
+        "Est_Remediated_Tokens__c, Removable_Restating__c, Removable_Duplicates__c, Removable_Unreferenced__c, Gate_Applied__c, Gate_Reason__c, Scan_Timestamp__c "
         "FROM OrgIQ_Scan__c ORDER BY Composite_Score__c ASC", org)
 
     dims = query(
@@ -126,6 +126,11 @@ def main():
                 "semanticDensity": density_share(s["Semantic_Density__c"]),
                 "estGroundingTokens": s["Est_Grounding_Tokens__c"],
                 "estRemediatedTokens": s["Est_Remediated_Tokens__c"],
+                "estRemovableTokens": {
+                    "restating_descriptions": s["Removable_Restating__c"] or 0,
+                    "duplicate_clusters": s["Removable_Duplicates__c"] or 0,
+                    "unreferenced_fields": s["Removable_Unreferenced__c"] or 0,
+                },
                 "gateApplied": s["Gate_Applied__c"],
                 "gateReason": s["Gate_Reason__c"] or "",
                 "timestamp": s["Scan_Timestamp__c"],

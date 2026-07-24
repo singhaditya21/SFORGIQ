@@ -219,6 +219,125 @@ export function portfolioStats(scans) {
   }
 }
 
+// ---- grounding economics (PRD §5.3) ------------------------------------
+//
+// FRAMING, and it is not decoration: Agentforce grounds through RETRIEVAL, not
+// through full-schema injection. So on this surface the cost of a bloated
+// metadata corpus is ACCURACY first — a retriever that cannot tell two fields
+// apart hands the planner the wrong one — and payload size only second. Nothing
+// here is an LLM bill.
+//
+// Every number below is a deterministic ESTIMATE over normalised words and
+// characters (scanner/density.py): stable across re-scans and comparable org to
+// org, but never a model tokenizer's count and never a billed cost. Callers must
+// say so wherever they render one.
+
+const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+// Per-play split of the removable payload — scan_result's `est_removable_tokens`,
+// whose three buckets are density.REMOVABLE_KEYS and sum exactly to
+// (current - remediated). The scanner owns it and no Salesforce field maps to it
+// yet, so today's portfolio export does NOT carry it; a scan without it returns
+// null here and the card shows totals only. There is no way to recover the split
+// from the totals, and a guessed one would be indistinguishable on screen from a
+// measured one.
+//
+// The buckets are play names, not rule ids, so the rule each one maps to is
+// spelled out here — that mapping is what makes a bar drillable into the
+// findings behind it. It mirrors the three plays grounding_payload models; a
+// fourth bucket added there shows up as an unlabelled, non-drillable row (its
+// tokens still counted) rather than silently vanishing from the total.
+const REMOVABLE_LEVERS = {
+  unreferenced_fields: 'D1.UNREFERENCED_FIELD',
+  restating_descriptions: 'D1.LOW_INFO_DESCRIPTION',
+  duplicate_clusters: 'D1.SEMANTIC_DUPLICATE',
+}
+
+function removableLevers(scan) {
+  const raw = scan.estRemovableTokens ?? scan.est_removable_tokens ?? null
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const kept = Object.entries(raw)
+    .map(([key, v]) => [key, finite(v)])
+    .filter(([, v]) => v != null && v > 0)
+  return kept.length ? kept : null
+}
+
+export function groundingEconomics(scans) {
+  let current = 0, remediated = 0
+  let densityNum = 0, densityDen = 0
+  const orgs = []
+  const levers = new Map()
+
+  for (const s of scans) {
+    const sc = s.scan
+    const cur = finite(sc.estGroundingTokens)
+    const rem = finite(sc.estRemediatedTokens)
+    // A scan that predates these fields is skipped outright rather than folded
+    // in as a zero, which would read as "measured, and clean".
+    if (cur == null || rem == null || cur <= 0) continue
+
+    current += cur
+    remediated += rem
+    const removable = Math.max(0, cur - rem)
+
+    // semanticDensity is a 0-1 SHARE, not a percent — the org detail view
+    // already trips over this. Weight the portfolio average by the org's own
+    // payload, or a tiny clean org counts for as much as a huge messy one.
+    const d = finite(sc.semanticDensity)
+    if (d != null) { densityNum += d * cur; densityDen += cur }
+
+    orgs.push({
+      externalId: sc.externalId,
+      name: sc.targetOrg,
+      band: sc.readinessBand,
+      current: cur,
+      remediated: rem,
+      removable,
+      removablePct: (removable / cur) * 100,
+      density: d,
+    })
+
+    const split = removableLevers(sc)
+    if (split) for (const [key, tokens] of split) levers.set(key, (levers.get(key) || 0) + tokens)
+  }
+
+  const removable = Math.max(0, current - remediated)
+  const leverTotal = [...levers.values()].reduce((a, b) => a + b, 0)
+  const leverRows = levers.size
+    ? [...levers.entries()]
+      .map(([key, tokens]) => {
+        // hasOwn, not a bare lookup: a bucket named "constructor" would
+        // otherwise resolve to Object.prototype's and be labelled with it.
+        const ruleId = Object.hasOwn(REMOVABLE_LEVERS, key) ? REMOVABLE_LEVERS[key] : null
+        return {
+          key,
+          ruleId,                                    // null => shown, but not drillable
+          label: ruleId ? ruleLabel(ruleId) : key.replace(/_/g, ' '),
+          tokens,
+          // Share of the ATTRIBUTED payload, so the bars read as 100% of what the
+          // scanner could account for rather than of a total they may not cover
+          // (they do cover it today — the buckets sum to current - remediated —
+          // but a portfolio mixing new and old exports would not).
+          pct: leverTotal ? (tokens / leverTotal) * 100 : 0,
+        }
+      })
+      .sort((a, b) => b.tokens - a.tokens)
+    : null
+
+  return {
+    orgCount: orgs.length,
+    missingCount: scans.length - orgs.length,
+    current,
+    remediated,
+    removable,
+    removablePct: current ? (removable / current) * 100 : 0,
+    density: densityDen ? densityNum / densityDen : null,   // 0-1 share
+    levers: leverRows,
+    leverTotal,
+    orgs: orgs.sort((a, b) => b.removable - a.removable || b.current - a.current),
+  }
+}
+
 // Every finding in the portfolio, tagged with the org it came from — the basis
 // for cross-filtering (click a rule/dimension/severity anywhere, see the matches).
 export function flattenFindings(scans) {

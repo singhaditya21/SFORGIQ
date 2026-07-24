@@ -23,6 +23,7 @@ import json
 import random
 
 import backlog                         # gate + row shaping for the Jira CSV
+import density                         # REMOVABLE_KEYS — the payload breakdown buckets
 import metadata as md                  # Flow / Apex / trigger / permission-set model
 import orgiq_spike as scanner          # Field, RULES, ABBREV
 import rules_ext                       # the real D2–D5 rule packs
@@ -379,11 +380,15 @@ def build_portfolio():
         # Built before the D1 rules run: the report references gate
         # D1.UNREFERENCED_FIELD and weight every other D1 finding.
         org_meta = gen_org_metadata(objects, fields, ratio, random.Random(5000 + i))
-        findings = scanner.all_d1_findings(fields, org_meta.report_refs,
-                                           scanner.code_identifiers(org_meta))
+        code_tokens = scanner.code_identifiers(org_meta)
+        findings = scanner.all_d1_findings(fields, org_meta.report_refs, code_tokens)
         findings.extend(rules_ext.all_findings(org_meta))   # the real D2–D5 packs
+        # The same reference evidence goes to the scan record, so the payload
+        # projection retires exactly the fields the backlog tickets for retirement.
         scans.append(scan_result.build(fields, findings, name, scan_mode=m,
-                                       assessed_dims=frozenset({"D1"} | org_meta.assessable_dims())))
+                                       assessed_dims=frozenset({"D1"} | org_meta.assessable_dims()),
+                                       report_refs=org_meta.report_refs,
+                                       code_tokens=code_tokens))
         orgs.append((name, findings))
     return scans, orgs
 
@@ -472,6 +477,17 @@ def main():
     print(f"  fields:     {fields}")
     print(f"  findings:   {total_f}  ({unref} D1.UNREFERENCED_FIELD)")
     print(f"  dimensions: {total_d}")
+    # Portfolio-wide grounding payload. Printed because it is the headline the
+    # landing page reports, and a silent regression in it is otherwise invisible
+    # until someone opens the dashboard. Estimates, not billed tokens.
+    cur = sum(s["scan"]["est_grounding_tokens"] for s in scans)
+    rem = sum(s["scan"]["est_remediated_tokens"] for s in scans)
+    print(f"  payload:    {cur:,} est. grounding tokens -> {rem:,} after the D1 "
+          f"plays land — {((1 - rem / cur) * 100) if cur else 0:.1f}% is dead "
+          f"weight removable without losing information")
+    for key in density.REMOVABLE_KEYS:
+        n = sum(s["scan"]["est_removable_tokens"][key] for s in scans)
+        print(f"                {n:>6,}  {key}")
     # The load target is a Developer Edition org: 2 KB per record, ~5 MB total.
     print(f"  records:    {records} of {RECORD_BUDGET} budgeted "
           f"— {records * RECORD_KB / 1024:.2f} MB at {RECORD_KB} KB/record")

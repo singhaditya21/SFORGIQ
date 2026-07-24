@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Removable_Restating__c</fullName>
+    <description>Estimated grounding tokens removable by deleting label-restating descriptions. Deterministic estimate over normalised text, not a model tokenizer count.</description>
+    <inlineHelpText>Estimated grounding tokens removable by deleting label-restating descriptions. Deterministic estimate over normalised text, not a model tokenizer count.</inlineHelpText>
+    <label>Removable - Restating Descriptions</label>
+    <precision>9</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

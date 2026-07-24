@@ -97,7 +97,8 @@ def main():
     scan_cols = ["External_Scan_Id__c", "Target_Org__c", "Scan_Mode__c",
                  "Rubric_Version__c", "Composite_Score__c", "Readiness_Band__c",
                  "Components_Scanned__c", "Semantic_Density__c",
-                 "Est_Grounding_Tokens__c", "Est_Remediated_Tokens__c",
+                 "Est_Grounding_Tokens__c", "Est_Remediated_Tokens__c", "Removable_Restating__c",
+                 "Removable_Duplicates__c", "Removable_Unreferenced__c",
                  "Gate_Applied__c", "Gate_Reason__c", "Scan_Timestamp__c"]
     _write_csv(tmp / "scan.csv", scan_cols, [{
         "External_Scan_Id__c": scan["external_scan_id"],
@@ -110,6 +111,9 @@ def main():
         "Semantic_Density__c": _density_pct(scan["semantic_density"]),
         "Est_Grounding_Tokens__c": scan["est_grounding_tokens"],
         "Est_Remediated_Tokens__c": scan["est_remediated_tokens"],
+        "Removable_Restating__c": (scan.get("est_removable_tokens") or {}).get("restating_descriptions", 0),
+        "Removable_Duplicates__c": (scan.get("est_removable_tokens") or {}).get("duplicate_clusters", 0),
+        "Removable_Unreferenced__c": (scan.get("est_removable_tokens") or {}).get("unreferenced_fields", 0),
         "Gate_Applied__c": _b(scan["gate_applied"]),
         "Gate_Reason__c": scan["gate_reason"],
         "Scan_Timestamp__c": scan["scan_timestamp"],

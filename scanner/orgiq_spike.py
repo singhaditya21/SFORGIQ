@@ -467,8 +467,21 @@ def all_d1_findings(fields: list[Field], report_refs=None,
 
 # ------------------------------------------------------------- report
 
+# Caption per density.REMOVABLE_KEYS bucket, ordered smallest lever first so the
+# table reads up to the one that dominates. Keyed off density's own tuple, so a
+# bucket added there fails loudly here rather than being silently dropped.
+_REMOVABLE_CAPTIONS = {
+    "restating_descriptions":
+        "Descriptions that only restate the label — deleted (D1.LOW_INFO_DESCRIPTION)",
+    "duplicate_clusters":
+        "Fields collapsed into a canonical twin (D1.SEMANTIC_DUPLICATE)",
+    "unreferenced_fields":
+        "Fields nothing reads — retired entirely (D1.UNREFERENCED_FIELD)",
+}
+
+
 def report(name: str, fields: list[Field], findings: list[Finding], show: int,
-           report_refs=None) -> str:
+           report_refs=None, code_tokens=frozenset()) -> str:
     L = []
     L.append(f"# OrgIQ spike — {name}\n")
     L.append(f"Fields parsed: **{len(fields)}** across "
@@ -498,16 +511,31 @@ def report(name: str, fields: list[Field], findings: list[Finding], show: int,
     # Coverage says how much text exists; density says whether it was worth
     # carrying. Both are arithmetic over the metadata — no model is consulted.
     pct = density.semantic_density(fields) * 100
-    payload = density.grounding_payload(fields)
+    payload = density.grounding_payload(fields, report_refs, code_tokens)
     cur, rem = payload["current_tokens"], payload["remediated_tokens"]
     shrink = (1 - rem / cur) * 100 if cur else 0.0
     L.append(f"Semantic density: **{pct:.1f}%** — the share of description words "
              f"that add something the field's own label and API name do not "
              f"already say. Deterministic estimate, not a model metric.\n")
-    L.append(f"Estimated grounding payload: **{cur:,}** tokens today, "
-             f"**{rem:,}** once the LOW_INFO_DESCRIPTION and SEMANTIC_DUPLICATE "
-             f"plays land — **{shrink:.0f}%** smaller. Deterministic estimates "
-             f"(roughly characters/4), not model tokenizer counts.\n")
+    L.append(f"Estimated grounding payload: **{cur:,}** today, **{rem:,}** once "
+             f"the plays below land — **{shrink:.1f}%** of it is dead weight. "
+             f"Agentforce grounds by *retrieval*, not by injecting the whole "
+             f"schema, so read this as an accuracy measure first: it is the "
+             f"share of what a retriever carries that can be removed without "
+             f"losing any information, and every such token is one more "
+             f"near-identical candidate it no longer has to choose between. "
+             f"Size is the secondary reading. Deterministic estimates over "
+             f"normalised words and characters — not a model tokenizer's count, "
+             f"not a bill.\n")
+
+    L.append("| Removable payload | Est. tokens | % of current |")
+    L.append("|---|---:|---:|")
+    for key in density.REMOVABLE_KEYS:
+        n = payload["removable"][key]
+        L.append(f"| {_REMOVABLE_CAPTIONS[key]} | {n:,} | "
+                 f"{(n / cur * 100) if cur else 0:.1f}% |")
+    L.append(f"| **Total removable** | **{cur - rem:,}** | **{shrink:.1f}%** |")
+    L.append("")
 
     if report_refs is not None:
         if report_refs.available:
@@ -517,8 +545,11 @@ def report(name: str, fields: list[Field], findings: list[Finding], show: int,
                      f"the same defect costs more where the business is looking.\n")
         else:
             L.append("No report or dashboard metadata in this project, so "
-                     "D1.UNREFERENCED_FIELD did not run and no finding was "
-                     "weighted by blast radius.\n")
+                     "D1.UNREFERENCED_FIELD did not run, no finding was "
+                     "weighted by blast radius, and the payload projection "
+                     "above claims no retirement saving — with nothing to check "
+                     "against, an unused field and an unobserved one look the "
+                     "same, and the honest projection is the smaller one.\n")
 
     for rid, _ in RULES:
         fs = by_rule[rid]
@@ -564,8 +595,11 @@ def main():
     # actually consumes, which both gates D1.UNREFERENCED_FIELD and weights
     # everything else D1 finds.
     org_meta = sfmeta.parse_project(root)
-    findings = all_d1_findings(fields, org_meta.report_refs,
-                               code_identifiers(org_meta))
+    # Held in a name rather than inlined: the report and the scan record must
+    # project the payload against exactly the reference evidence the rules ran
+    # on, or the projection and the backlog disagree about which fields are dead.
+    code_tokens = code_identifiers(org_meta)
+    findings = all_d1_findings(fields, org_meta.report_refs, code_tokens)
 
     # D3–D5 run whenever the project actually carries the metadata they need
     # (Flows, Apex, triggers, permission sets). D2 needs record data, so in
@@ -574,7 +608,8 @@ def main():
     findings.extend(rules_ext.all_findings(org_meta))
     assessed = frozenset({"D1"} | org_meta.assessable_dims())
 
-    md = report(a.name or root.name, fields, findings, a.show, org_meta.report_refs)
+    md = report(a.name or root.name, fields, findings, a.show,
+                org_meta.report_refs, code_tokens)
     if a.out:
         Path(a.out).write_text(md)
         print(f"wrote {a.out}")
@@ -590,7 +625,9 @@ def main():
 
     if a.scan_json:
         result = scan_result.build(fields, findings, source, scan_mode=a.mode,
-                                   assessed_dims=assessed)
+                                   assessed_dims=assessed,
+                                   report_refs=org_meta.report_refs,
+                                   code_tokens=code_tokens)
         scan_result.write_json(result, a.scan_json)
         s = result["scan"]
         print(f"\nwrote {a.scan_json} — composite {s['composite_score']} "

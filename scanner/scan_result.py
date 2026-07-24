@@ -154,7 +154,13 @@ def _scan_external_id(source: str) -> str:
 
 
 def build(fields, findings, source: str, scan_mode: str = "Source",
-          assessed_dims=frozenset({"D1"}), now: datetime | None = None) -> dict:
+          assessed_dims=frozenset({"D1"}), now: datetime | None = None,
+          report_refs=None, code_tokens=frozenset()) -> dict:
+    """`report_refs` / `code_tokens` are the same reference evidence the D1 rules
+    run on. They are optional and trail the older arguments so existing callers
+    keep working, but a caller that has them should pass them: without them the
+    payload projection cannot model retiring unreferenced fields, which is its
+    largest lever."""
     now = now or datetime.now(timezone.utc)
     dim_rows = _dimension_rows(fields, findings, assessed_dims)
     composite, gate_applied, gate_reason = _composite(dim_rows, findings)
@@ -163,7 +169,7 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
     # Grounding metrics (PRD §5.3). Deterministic ESTIMATES over metadata text —
     # they are for before/after and org/org comparison, never for invoicing, so
     # the token keys stay explicitly prefixed `est_`.
-    payload = density.grounding_payload(fields)
+    payload = density.grounding_payload(fields, report_refs, code_tokens)
 
     scan = {
         "external_scan_id": _scan_external_id(source),
@@ -176,6 +182,11 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
         "semantic_density": density.semantic_density(fields),
         "est_grounding_tokens": payload["current_tokens"],
         "est_remediated_tokens": payload["remediated_tokens"],
+        # Additive: what each play removes, so the gap between the two figures
+        # above is attributable instead of a black box. The three values sum to
+        # that gap. No Salesforce field maps to this yet — the loaders pick
+        # their columns explicitly, so carrying it costs them nothing.
+        "est_removable_tokens": payload["removable"],
         "gate_applied": gate_applied,
         "gate_reason": gate_reason,
         "scan_timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.000+0000"),

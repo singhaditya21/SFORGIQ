@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import {
   portfolioStats, bandBreakdown, portfolioFindingBreakdown, dimensionAverages,
-  orgRows, heatmapRows, flattenFindings, applyFindingFilter,
+  orgRows, heatmapRows, flattenFindings, applyFindingFilter, groundingEconomics,
   EMPTY_FILTER, findingFilterActive, ruleLabel, BAND_META,
   backlogCsv, downloadCsv,
 } from '../lib/data.js'
 import KpiRow from '../components/KpiRow.jsx'
+import GroundingEconomics from '../components/GroundingEconomics.jsx'
 import FilterBar from '../components/FilterBar.jsx'
 import BandBar from '../components/BandBar.jsx'
 import Quadrant from '../components/Quadrant.jsx'
@@ -31,6 +32,9 @@ export default function PortfolioView({ data }) {
   const bands = bandBreakdown(scans)
   const dimAvgs = dimensionAverages(scans)
   const findingMix = portfolioFindingBreakdown(scans)
+  // Portfolio-wide, like the KPI tiles and the band bar above it: this is the
+  // shape of the estate, not of the current drill-down.
+  const econ = useMemo(() => groundingEconomics(scans), [scans])
   const rows = useMemo(() => orgRows(scans), [scans])
   const allFindings = useMemo(() => flattenFindings(scans), [scans])
 
@@ -91,7 +95,7 @@ export default function PortfolioView({ data }) {
         </button>
       </div>
 
-      <KpiRow stats={stats} filter={filter} onFilter={toggle} />
+      <KpiRow stats={stats} grounding={econ} filter={filter} onFilter={toggle} />
 
       <FilterBar filter={filter} onClear={clear} onDrop={drop}
                  matchCount={findingFilterActive(filter) ? matching.length : null}
@@ -124,6 +128,17 @@ export default function PortfolioView({ data }) {
             <span className="card__hint">readiness vs effort · click a dot</span>
           </div>
           <Quadrant rows={rows} activeBand={filter.band} />
+        </section>
+
+        {/* Full width and a row of its own — three internal columns keep it in
+            the same height band as the full-width cards below it, and a 1-col
+            card here would leave two holes in row 1 (which already fills). */}
+        <section className="card card--full">
+          <div className="card__head">
+            <h2 className="card__title">Grounding economics</h2>
+            <span className="card__hint">retrieval quality · click a play or an org</span>
+          </div>
+          <GroundingEconomics econ={econ} rule={filter.rule} onRule={(r) => toggle('rule', r)} />
         </section>
 
         {/* Full width, bars laid out in columns: 21 rules stacked in a third of

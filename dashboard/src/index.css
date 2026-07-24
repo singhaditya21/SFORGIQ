@@ -82,15 +82,29 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ---------- KPIs (gapless hairline tiles) ---------- */
+/* The 1px gap over a tinted container is what draws the hairlines, so an empty
+   cell is not blank — it is a grey block. Every breakpoint's column count must
+   therefore divide the tiles' TOTAL SPAN exactly, or the last row shows holes.
+   Total span is 16: fourteen tiles, of which the two grounding ones span 2
+   (their labels and 5-digit token counts do not fit a 1/16 column, and at 1/14
+   they wrapped every tile in the row to 130px). 16 / 8 / 4 / 2 all divide it.
+   Adding a tile means re-checking that chain.
+
+   Measured minimum column width before text wraps: 111px for a single tile
+   ("effort pts · prov." and "60/100" are both 85px of content) and 154px for a
+   span-2 tile. So 16 columns only fit above ~1860px; below that the row is two
+   clean rows of 8 rather than one row of wrapped labels. */
 .kpis {
-  display: grid; grid-template-columns: repeat(12, 1fr); gap: 1px; margin-bottom: 12px;
+  display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px; margin-bottom: 12px;
   background: var(--border); border: 1px solid var(--border);
   border-radius: var(--radius); overflow: hidden;
 }
+@media (min-width: 1860px) { .kpis { grid-template-columns: repeat(16, 1fr); } }
 .kpi {
   background: var(--surface); border: none; border-radius: 0; padding: 12px 13px;
   font: inherit; color: inherit; text-align: left;
 }
+.kpi--wide { grid-column: span 2; }
 .kpi--click { cursor: pointer; }
 .kpi--click:hover { background: var(--surface-2); }
 .kpi--on { background: var(--accent-soft); box-shadow: inset 0 -3px 0 var(--accent); }
@@ -294,6 +308,91 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .sevrow__count { font-weight: 700; font-variant-numeric: tabular-nums; }
 .analytics__total { margin-left: auto; font-size: 12px; color: var(--text-3); }
 
+/* ---------- grounding economics ---------- */
+/* Three internal columns divided by hairlines, then one org strip under them —
+   the same gapless language as the page grid, and it keeps the card in the same
+   height band as the full-width cards below it instead of stacking into a
+   column of text. */
+.gecon { display: grid; gap: 15px; }
+.gecon__cols { display: grid; grid-template-columns: repeat(3, 1fr); }
+.gecon__panel { padding: 0 20px; border-left: 1px solid var(--border); min-width: 0; }
+.gecon__panel:first-child { padding-left: 0; border-left: none; }
+.gecon__panel:last-child { padding-right: 0; }
+.gecon__k {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-3); font-weight: 700; margin: 0 0 10px;
+}
+.gecon__big { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.06; }
+.gecon__unit { font-size: 13px; font-weight: 600; color: var(--text-3); letter-spacing: 0; }
+.gecon__meter { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin-top: 9px; }
+.gecon__meterfill { height: 100%; background: var(--accent); border-radius: 4px; }
+.gecon__lead { margin: 10px 0 0; font-size: 13px; color: var(--text); line-height: 1.5; }
+.gecon__note { margin: 7px 0 0; font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+.gecon__fine { margin: 7px 0 0; font-size: 11.5px; color: var(--text-3); line-height: 1.45; }
+.gecon__none { margin: 0; font-size: 13px; color: var(--text-2); }
+
+/* current vs remediated — near-black is today, blue is what survives the fixes */
+.gecon__ba { margin-top: 11px; display: grid; gap: 6px; }
+.gecon__barow { display: grid; grid-template-columns: 78px 1fr 56px; align-items: center; gap: 9px; font-size: 12px; }
+.gecon__balabel { color: var(--text-2); }
+.gecon__batrack { height: 12px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.gecon__bafill { display: block; height: 100%; background: var(--sev-critical); }
+.gecon__bafill--after { background: var(--accent); }
+.gecon__baval { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+
+.gecon__levers { display: grid; gap: 1px; }
+.gecon__lever {
+  display: block; width: 100%; text-align: left; font: inherit; color: inherit;
+  background: none; border: none; cursor: pointer; padding: 4px 6px; border-radius: 5px;
+}
+.gecon__lever:hover { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+/* A bucket with no rule behind it is not a drill target — no pointer, no hover. */
+.gecon__lever--static { cursor: default; }
+.gecon__lever--static:hover { background: none; box-shadow: none; }
+.gecon__lever--on { background: var(--accent-soft); }
+.gecon__lever--on .gecon__levername { color: var(--accent); }
+.gecon__levertop { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; margin-bottom: 4px; }
+.gecon__levername { font-weight: 500; }
+.gecon__leverval { color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gecon__leverbar { display: block; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.gecon__leverfill { display: block; height: 100%; background: var(--accent); }
+
+.gecon__orgs { border-top: 1px solid var(--border); padding-top: 13px; }
+/* Flowed across the width rather than stacked, for the same reason the rule bars
+   are: six rows in one column would add ~160px of height for no information.
+   Fixed 3 / 2 / 1 rather than auto-fill, because the component shows exactly six
+   orgs and each of those divides six exactly — auto-fill landed on four columns
+   at common widths and left two empty cells. */
+.gecon__orgrows { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px 24px; }
+@media (max-width: 980px) { .gecon__orgrows { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .gecon__orgrows { grid-template-columns: 1fr; } }
+.gecon__org {
+  display: grid; grid-template-columns: 4px minmax(0, 1.6fr) 1fr auto auto;
+  align-items: center; gap: 9px; width: 100%; text-align: left;
+  font: inherit; font-size: 12.5px; color: inherit; background: none; border: none;
+  cursor: pointer; padding: 5px 6px; border-radius: 5px;
+}
+.gecon__org:hover { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.gecon__orgband { height: 14px; border-radius: 2px; background: var(--border-strong); }
+.gecon__orgband--not-ready { background: var(--band-not-ready); }
+.gecon__orgband--foundational { background: var(--band-foundational); }
+.gecon__orgband--conditional { background: var(--band-conditional); }
+.gecon__orgband--ready { background: var(--band-ready); }
+.gecon__orgname { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gecon__orgbar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.gecon__orgfill { display: block; height: 100%; background: var(--sev-medium); }
+.gecon__orgval { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.gecon__orgden { color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.gecon__lever:focus-visible, .gecon__org:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Below this the three panels are narrower than their own prose. */
+@media (max-width: 980px) {
+  .gecon__cols { grid-template-columns: 1fr; }
+  .gecon__panel { border-left: none; padding: 0; }
+  .gecon__panel + .gecon__panel { border-top: 1px solid var(--border); padding-top: 13px; margin-top: 13px; }
+}
+
 /* ---------- quadrant ---------- */
 .quad { width: 100%; height: auto; }
 .quad__guide { stroke: var(--border); stroke-dasharray: 3 4; }
@@ -495,13 +594,16 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .chip--ready .chip__x { background: rgba(10, 15, 26, 0.18); color: var(--text); }
 
 /* ---------- responsive ---------- */
-@media (max-width: 1500px) { .kpis { grid-template-columns: repeat(6, 1fr); } }
+/* The KPI row's own steps (8 / 4 / 2, each dividing its 16-column span) live
+   next to .kpis; 1500px is no longer one of them — 8 columns is the base. */
 @media (max-width: 1100px) {
   .grid { grid-template-columns: repeat(2, 1fr); }
   .card--wide { grid-column: span 1; }     /* pairs up instead of wrapping */
   .card--flex { grid-column: 1 / -1; }     /* fills its own row */
 }
-@media (max-width: 900px) { .kpis { grid-template-columns: repeat(4, 1fr); } }
+/* 1000, not 900: at 8 columns the tiles drop under the 111px wrap threshold
+   just below 1000px. */
+@media (max-width: 1000px) { .kpis { grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 760px) {
   .grid { grid-template-columns: 1fr; }
   .card--wide, .card--full, .card--flex, .findings { grid-column: 1; }
@@ -510,5 +612,6 @@ code { font-family: var(--mono); font-size: 0.92em; }
   .c-ev { max-width: none; }
   .heat__head, .heat__row { grid-template-columns: minmax(110px, 1.6fr) repeat(6, minmax(28px, 0.5fr)); }
 }
-@media (max-width: 560px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 380px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+/* 3 does not divide 16 (a span-2 tile would wrap and leave a hole), so this
+   step goes straight to 2. */
+@media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, 1fr); } }

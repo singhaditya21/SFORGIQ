@@ -7,11 +7,19 @@ into numbers without adding an LLM: everything here is pure, auditable
 arithmetic over metadata text, so re-scanning an unchanged org yields identical
 figures and any delta between two scans is attributable to the metadata alone.
 
-The token counts are ESTIMATES. They approximate what a model would be charged
-for this text; they are not produced by a model tokenizer and must never be
-presented as a billed token count. Real model-token accounting arrives only with
-the LLM enrichment tier (PRD §5.8). Until then these numbers are for comparison
-— before vs after a remediation, org vs org — not for invoicing.
+The token counts are ESTIMATES over normalised words and characters. They are
+not produced by a model tokenizer and must never be presented as a billed token
+count. Real model-token accounting arrives only with the LLM enrichment tier
+(PRD §5.8). Until then these numbers are for comparison — before vs after a
+remediation, org vs org — not for invoicing.
+
+Nor are they a cost-saving story. Agentforce grounds through RETRIEVAL, not by
+injecting the whole schema (PRD §5), so on this surface the price of bloat is
+paid in ACCURACY: the more near-identical, uninformative or dead metadata a
+retriever carries, the more indistinguishable candidates it has to choose
+between. Semantic density says how much of the retrieved text disambiguates
+anything; the payload projection says how much of it is pure dead weight that
+can go without losing information. Size is the secondary reading, always.
 """
 
 from __future__ import annotations
@@ -89,32 +97,68 @@ def semantic_density(fields) -> float:
     return (informative / total) if total else 0.0
 
 
-def grounding_payload(fields) -> dict:
-    """Estimated grounding tokens before and after the D1 fixes the tool already
-    recommends. Returns {"current_tokens": int, "remediated_tokens": int}.
+REMOVABLE_KEYS = ("restating_descriptions", "duplicate_clusters",
+                  "unreferenced_fields")
+
+
+def grounding_payload(fields, report_refs=None, code_tokens=frozenset()) -> dict:
+    """Estimated grounding payload before and after the D1 fixes the tool already
+    recommends, plus what each play removes. Returns::
+
+        {"current_tokens": int, "remediated_tokens": int,
+         "removable": {"restating_descriptions": int, "duplicate_clusters": int,
+                       "unreferenced_fields": int}}
+
+    READ THIS AS AN ACCURACY MEASURE FIRST. Agentforce grounds through
+    RETRIEVAL, not by injecting the whole schema, so on the grounding surface
+    the cost of bloat is primarily that a retriever has more indistinguishable
+    candidates to choose between (PRD §5). What the number below says is how
+    much of what it carries is dead weight — payload removable without losing
+    any information. Payload size is the secondary story, and none of these
+    figures is a billed cost.
 
     `current_tokens` is the text a retriever carries for these fields today:
     API name + label + description, one blob per field.
 
-    `remediated_tokens` re-estimates the same corpus after two of the tool's own
-    plays land:
+    `remediated_tokens` re-estimates the same corpus after three of the tool's
+    own plays land:
       - D1.LOW_INFO_DESCRIPTION — a description that only restates its label is
         deleted rather than rewritten. It is payload with no retrieval benefit
         (PRD §5.5), so removing it is the honest floor for that play.
       - D1.SEMANTIC_DUPLICATE — a cluster collapses to its canonical field and
         the rest leave the corpus, which is what that play's remediation says.
+      - D1.UNREFERENCED_FIELD — a field no report, dashboard, Flow, Apex class
+        or trigger looks at is a retirement candidate, and retiring it removes
+        its WHOLE footprint (api name + label + description), not part of it.
+        This is the largest of the three levers, and it is the reason
+        `report_refs` exists on this signature: the rule is evidence-gated, so
+        without report metadata it flags nothing and this play contributes
+        nothing. A source tree with no reports must never look like an org
+        where every field is dead.
 
     Deliberately NOT modelled: D1.MISSING_DESCRIPTION, because writing a real
     description *adds* tokens while raising density — the objective is two-sided
     (§5.5), not payload-minimising; and D1.NUMBERED_FAMILY, whose play is to
     re-model or re-describe the group, not to delete its members.
 
-    Both figures are deterministic ESTIMATES — see estimate_tokens.
+    `removable` attributes the saving so it is not a black box. Its three values
+    sum EXACTLY to current_tokens - remediated_tokens: every removable token is
+    credited once, to the narrowest play that already removes it. So a field
+    that is both dead and label-restating gives its description tokens to
+    restating_descriptions and only the remainder to unreferenced_fields — the
+    newest lever gets credit for what it alone removes, never for re-labelling a
+    saving the older plays had already claimed.
+
+    `code_tokens` is the same Apex/Flow identifier set the D1.UNREFERENCED_FIELD
+    rule takes (orgiq_spike.code_identifiers). It is optional but should be
+    passed wherever it exists: without it a field referenced only from code
+    looks dead here while the backlog correctly leaves it alone, and the
+    projection would overstate the saving.
+
+    All figures are deterministic ESTIMATES — see estimate_tokens.
     """
     spike = _spike()
     fields = list(fields)
-
-    current = sum(estimate_tokens(_field_text(f)) for f in fields)
 
     # Reuse the rules themselves rather than re-deriving their conditions, so
     # the projection can never drift from what the backlog actually tickets.
@@ -124,15 +168,33 @@ def grounding_payload(fields) -> dict:
         names = [n.strip() for n in finding.detail.split("|") if n.strip()]
         obj = finding.component.rsplit(" [", 1)[0]   # component is "<Object> [N fields]"
         superseded.update((obj, n) for n in names[1:])   # names[0] is the canonical field
+    # Returns [] when report_refs is absent or carries no documents — which is
+    # what keeps the no-report projection identical to the old two-play one.
+    retired = {f.component
+               for f in spike.rule_unreferenced_field(fields, report_refs, code_tokens)}
 
-    remediated = 0
+    current = remediated = 0
+    removable = dict.fromkeys(REMOVABLE_KEYS, 0)
     for f in fields:
-        if (f.object_name, f.api_name) in superseded:
-            continue
-        keep = "" if f"{f.object_name}.{f.api_name}" in restating else f.description
-        remediated += estimate_tokens(_field_text(f, keep))
+        component = f"{f.object_name}.{f.api_name}"
+        full = estimate_tokens(_field_text(f))
+        keep = "" if component in restating else f.description
+        # What survives deleting a label-restating description. Whole-field
+        # removals are credited this residual, so the description tokens are
+        # counted under the description play and never twice.
+        residual = estimate_tokens(_field_text(f, keep))
+        current += full
+        removable["restating_descriptions"] += full - residual
 
-    return {"current_tokens": current, "remediated_tokens": remediated}
+        if (f.object_name, f.api_name) in superseded:
+            removable["duplicate_clusters"] += residual
+        elif component in retired:
+            removable["unreferenced_fields"] += residual
+        else:
+            remediated += residual
+
+    return {"current_tokens": current, "remediated_tokens": remediated,
+            "removable": removable}
 
 
 def _field_text(field, description=None) -> str:
