@@ -1,25 +1,55 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
-  portfolioStats, bandBreakdown, portfolioFindingBreakdown, dimensionAverages, orgRows, BAND_META,
+  portfolioStats, bandBreakdown, portfolioFindingBreakdown, dimensionAverages,
+  orgRows, heatmapRows, flattenFindings, applyFindingFilter,
+  EMPTY_FILTER, findingFilterActive, ruleLabel, BAND_META,
 } from '../lib/data.js'
 import KpiRow from '../components/KpiRow.jsx'
+import FilterBar from '../components/FilterBar.jsx'
 import BandBar from '../components/BandBar.jsx'
 import Quadrant from '../components/Quadrant.jsx'
 import FindingAnalytics from '../components/FindingAnalytics.jsx'
 import DimensionAverages from '../components/DimensionAverages.jsx'
+import Heatmap from '../components/Heatmap.jsx'
 import OrgGrid from '../components/OrgGrid.jsx'
 import OrgsTable from '../components/OrgsTable.jsx'
+import PortfolioFindings from '../components/PortfolioFindings.jsx'
 
 export default function PortfolioView({ data }) {
   const scans = data.scans
-  const [band, setBand] = useState(null)          // shared readiness-band filter
+  const [filter, setFilter] = useState(EMPTY_FILTER)
+
+  // Every widget both reads and writes this one filter — clicking the same
+  // value twice clears it.
+  const toggle = (key, value) =>
+    setFilter((f) => ({ ...f, [key]: f[key] === value ? null : value }))
+  const drop = (key) => setFilter((f) => ({ ...f, [key]: null }))
+  const clear = () => setFilter(EMPTY_FILTER)
 
   const stats = portfolioStats(scans)
   const bands = bandBreakdown(scans)
-  const findingMix = portfolioFindingBreakdown(scans)
   const dimAvgs = dimensionAverages(scans)
-  const rows = orgRows(scans)
-  const shown = band ? rows.filter((r) => r.band === band) : rows
+  const findingMix = portfolioFindingBreakdown(scans)
+  const rows = useMemo(() => orgRows(scans), [scans])
+  const allFindings = useMemo(() => flattenFindings(scans), [scans])
+
+  const bandOrgIds = useMemo(
+    () => new Set(rows.filter((r) => !filter.band || r.band === filter.band).map((r) => r.externalId)),
+    [rows, filter.band])
+  const matching = useMemo(
+    () => applyFindingFilter(allFindings, filter).filter((f) => bandOrgIds.has(f.orgId)),
+    [allFindings, filter, bandOrgIds])
+  const matchOrgIds = useMemo(() => new Set(matching.map((f) => f.orgId)), [matching])
+
+  const shownOrgs = rows
+    .filter((r) => bandOrgIds.has(r.externalId))
+    .filter((r) => !findingFilterActive(filter) || matchOrgIds.has(r.externalId))
+  const shownIds = new Set(shownOrgs.map((r) => r.externalId))
+  const heat = heatmapRows(scans).filter((h) => shownIds.has(h.externalId))
+
+  const drillLabel = filter.rule ? ruleLabel(filter.rule)
+    : filter.dimension ? `${filter.dimension} findings`
+      : filter.severity ? `${filter.severity}-severity findings` : ''
 
   return (
     <>
@@ -27,68 +57,96 @@ export default function PortfolioView({ data }) {
         <div>
           <h1 className="pagehead__title">Readiness portfolio</h1>
           <p className="pagehead__sub">
-            {stats.orgCount} client orgs assessed for Agentforce readiness. Click any org to drill in.
+            {stats.orgCount} client orgs assessed. Click any metric, bar, cell or row to drill in.
           </p>
         </div>
       </div>
 
-      <KpiRow stats={stats} />
+      <KpiRow stats={stats} filter={filter} onFilter={toggle} />
+
+      <FilterBar filter={filter} onClear={clear} onDrop={drop}
+                 matchCount={findingFilterActive(filter) ? matching.length : null}
+                 orgCount={shownOrgs.length} />
 
       <div className="grid grid--portfolio">
         <section className="card">
           <div className="card__head">
             <h2 className="card__title">Readiness distribution</h2>
-            <span className="card__hint">click a band to filter</span>
+            <span className="card__hint">click a band</span>
           </div>
-          <BandBar breakdown={bands} active={band} onSelect={setBand} />
+          <BandBar breakdown={bands} active={filter.band} onSelect={(b) => toggle('band', b)} />
         </section>
 
         <section className="card">
           <div className="card__head">
-            <h2 className="card__title">Average score by dimension</h2>
-            <span className="card__hint">D1–D5, across the portfolio</span>
+            <h2 className="card__title">Average by dimension</h2>
+            <span className="card__hint">click to filter</span>
           </div>
-          <DimensionAverages averages={dimAvgs} />
+          <DimensionAverages averages={dimAvgs} dimension={filter.dimension}
+                             onDimension={(d) => toggle('dimension', d)} />
         </section>
 
-        <section className="card card--wide">
+        <section className="card card--flex">
           <div className="card__head">
             <h2 className="card__title">Most common problems</h2>
-            <span className="card__hint">findings by type, all orgs</span>
+            <span className="card__hint">findings by type · click a bar</span>
           </div>
-          <FindingAnalytics breakdown={findingMix} />
+          <FindingAnalytics breakdown={findingMix} rule={filter.rule} severity={filter.severity}
+                            onRule={(r) => toggle('rule', r)}
+                            onSeverity={(s) => toggle('severity', s)} />
+        </section>
+
+        <section className="card card--full">
+          <div className="card__head">
+            <h2 className="card__title">Every org against every dimension</h2>
+            <span className="card__hint">{heat.length} orgs · darker is worse</span>
+          </div>
+          <Heatmap rows={heat} dimension={filter.dimension}
+                   onDimension={(d) => toggle('dimension', d)} />
+        </section>
+
+        <section className="card">
+          <div className="card__head">
+            <h2 className="card__title">Where to spend</h2>
+            <span className="card__hint">readiness vs effort · click a dot</span>
+          </div>
+          <Quadrant rows={rows} activeBand={filter.band} />
         </section>
 
         <section className="card card--wide">
           <div className="card__head">
             <h2 className="card__title">
               All orgs
-              {band && (
-                <span className={`chip chip--${BAND_META[band].key}`}>
-                  {BAND_META[band].short}
-                  <button className="chip__x" onClick={() => setBand(null)}>✕</button>
+              {filter.band && (
+                <span className={`chip chip--${BAND_META[filter.band].key}`}>
+                  {BAND_META[filter.band].short}
+                  <button className="chip__x" onClick={() => drop('band')}>✕</button>
                 </span>
               )}
             </h2>
-            <span className="card__hint">{shown.length} shown · click a card to open</span>
+            <span className="card__hint">{shownOrgs.length} shown</span>
           </div>
-          <OrgGrid rows={shown} />
+          <OrgGrid rows={shownOrgs} />
         </section>
 
-        <section className="card card--wide">
-          <div className="card__head">
-            <h2 className="card__title">Where to spend</h2>
-            <span className="card__hint">readiness vs remediation effort · click a dot</span>
-          </div>
-          <Quadrant rows={rows} activeBand={band} />
-        </section>
+        {findingFilterActive(filter) && (
+          <section className="card card--full">
+            <div className="card__head">
+              <h2 className="card__title">{drillLabel} — across the portfolio</h2>
+              <span className="card__hint">
+                {matching.length.toLocaleString()} findings in {matchOrgIds.size} orgs · click a row to open the org
+              </span>
+            </div>
+            <PortfolioFindings findings={matching} />
+          </section>
+        )}
 
-        <section className="card card--wide">
+        <section className="card card--full">
           <div className="card__head">
             <h2 className="card__title">Orgs — detail</h2>
             <span className="card__hint">sort by any column · click a row to open</span>
           </div>
-          <OrgsTable rows={rows} band={band} onBand={setBand} />
+          <OrgsTable rows={rows} band={filter.band} onBand={(b) => setFilter((f) => ({ ...f, band: b }))} />
         </section>
       </div>
     </>

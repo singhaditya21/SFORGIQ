@@ -105,6 +105,51 @@ export function portfolioStats(scans) {
   }
 }
 
+// Every finding in the portfolio, tagged with the org it came from — the basis
+// for cross-filtering (click a rule/dimension/severity anywhere, see the matches).
+export function flattenFindings(scans) {
+  const out = []
+  for (const s of scans) {
+    for (const f of s.findings) {
+      out.push({ ...f, org: s.scan.targetOrg, orgId: s.scan.externalId })
+    }
+  }
+  return out
+}
+
+export function applyFindingFilter(findings, filter) {
+  return findings
+    .filter((f) => !filter.dimension || f.dimension === filter.dimension)
+    .filter((f) => !filter.rule || f.ruleId === filter.rule)
+    .filter((f) => !filter.severity || f.severity === filter.severity)
+}
+
+export const EMPTY_FILTER = { band: null, dimension: null, rule: null, severity: null }
+export function filterIsActive(f) {
+  return !!(f.band || f.dimension || f.rule || f.severity)
+}
+export function findingFilterActive(f) {
+  return !!(f.dimension || f.rule || f.severity)
+}
+
+// One row per org with its five dimension scores — feeds the heatmap.
+export function heatmapRows(scans) {
+  return scans
+    .map((s) => {
+      const dims = {}
+      for (const d of s.dimensions) dims[d.code] = d.score
+      return {
+        externalId: s.scan.externalId,
+        name: s.scan.targetOrg,
+        composite: s.scan.compositeScore,
+        band: s.scan.readinessBand,
+        findings: s.findings.length,
+        dims,
+      }
+    })
+    .sort((a, b) => a.composite - b.composite)
+}
+
 // Average score per dimension across the orgs that assessed it.
 export function dimensionAverages(scans) {
   const acc = {}
