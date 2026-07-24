@@ -1,4 +1,4 @@
-import { BAND_META, bandKey } from '../lib/data.js'
+import { bandKey } from '../lib/data.js'
 
 const DIMS = ['D1', 'D2', 'D3', 'D4', 'D5']
 
