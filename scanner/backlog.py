@@ -150,6 +150,91 @@ _PLAYBOOK = {
             "for this cluster."
         ),
     },
+
+    # --- D2 Data Foundation ---
+    "D2.LOW_FILL_RATE": {
+        "epic": "Backfill under-populated fields", "points": 5,
+        "remediation": "1. Identify records missing the field and the system of record.\n"
+                       "2. Backfill from source or mark deliberately empty.\n"
+                       "3. Add validation/automation to keep it populated going forward.",
+        "acceptance": "Fill rate on the field exceeds the grounding threshold; re-scan clears the finding.",
+    },
+    "D2.STALE_DATA": {
+        "epic": "Refresh stale data", "points": 3,
+        "remediation": "1. Confirm which records are genuinely stale vs dormant.\n"
+                       "2. Refresh from source or archive.\n"
+                       "3. Add a freshness SLA / last-verified process.",
+        "acceptance": "Stale-record ratio falls below threshold; re-scan clears the finding.",
+    },
+    "D2.DUPLICATE_RECORDS": {
+        "epic": "De-duplicate records", "points": 5,
+        "remediation": "1. Run matching rules to cluster duplicates.\n"
+                       "2. Merge to a surviving record with the correct field survivorship.\n"
+                       "3. Add duplicate rules to prevent recurrence.",
+        "acceptance": "Duplicate rate below threshold; re-scan clears the finding.",
+    },
+
+    # --- D3 Action Surface ---
+    "D3.NO_SAFE_ACTIONS": {
+        "epic": "Build a safe action surface", "points": 8,
+        "remediation": "1. Identify the tasks the agent must perform.\n"
+                       "2. Expose bulk-safe, idempotent invocable actions with typed inputs.\n"
+                       "3. Document each so the planner can select it.",
+        "acceptance": "At least one bulk-safe invocable action exists per intended task; re-scan clears the finding.",
+    },
+    "D3.UNDOCUMENTED_ACTION": {
+        "epic": "Document invocable actions", "points": 2,
+        "remediation": "1. Describe what the action does, its inputs, and when to use it.\n"
+                       "2. Keep the description disambiguating, not a restatement of the name.",
+        "acceptance": "Action carries a planner-usable description; re-scan clears the finding.",
+    },
+    "D3.APEX_NO_TESTS": {
+        "epic": "Cover agent-invoked Apex with tests", "points": 3,
+        "remediation": "1. Add tests exercising the class's bulk and error paths.\n"
+                       "2. Assert on outcomes, not just coverage percentage.",
+        "acceptance": "Class has meaningful test coverage; re-scan clears the finding.",
+    },
+
+    # --- D4 Permission Blast Radius ---
+    "D4.MODIFY_ALL_DATA": {
+        "epic": "Remove Modify All Data from the agent", "points": 5,
+        "remediation": "1. Enumerate what the agent actually needs to write.\n"
+                       "2. Replace Modify All Data with scoped object/field permissions.\n"
+                       "3. Re-test the agent against the tightened permission set.",
+        "acceptance": "Agent permission set no longer grants Modify All Data; re-scan clears the finding.",
+    },
+    "D4.VIEW_ALL_DATA": {
+        "epic": "Remove View All Data from the agent", "points": 3,
+        "remediation": "1. Determine the records the agent legitimately reads.\n"
+                       "2. Replace View All Data with sharing-based or scoped read access.",
+        "acceptance": "Agent permission set no longer grants View All Data; re-scan clears the finding.",
+    },
+    "D4.WIDE_OBJECT_ACCESS": {
+        "epic": "Tighten over-broad object access", "points": 2,
+        "remediation": "1. Compare granted object/field access to the agent's task scope.\n"
+                       "2. Revoke access beyond what the task requires.",
+        "acceptance": "Object access matches task scope; re-scan clears the finding.",
+    },
+
+    # --- D5 Automation Collision ---
+    "D5.DML_IN_LOOP": {
+        "epic": "Bulkify automation", "points": 5,
+        "remediation": "1. Move DML out of loops; collect and act on collections.\n"
+                       "2. Add bulk tests (200+ records) that would have caught it.",
+        "acceptance": "No DML in loops on the automation path; bulk tests pass; re-scan clears the finding.",
+    },
+    "D5.MULTIPLE_TRIGGERS": {
+        "epic": "Consolidate triggers per object", "points": 8,
+        "remediation": "1. Consolidate to one trigger per object delegating to a handler.\n"
+                       "2. Define a deterministic execution order.",
+        "acceptance": "One trigger per object with defined order; re-scan clears the finding.",
+    },
+    "D5.NO_RECURSION_GUARD": {
+        "epic": "Add recursion guards", "points": 3,
+        "remediation": "1. Add a static guard so the handler runs once per transaction.\n"
+                       "2. Verify an agent-initiated write cannot re-fire the automation.",
+        "acceptance": "Automation is recursion-safe; re-scan clears the finding.",
+    },
 }
 
 

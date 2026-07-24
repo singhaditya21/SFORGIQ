@@ -21,7 +21,10 @@ import json
 import random
 
 import orgiq_spike as scanner          # Field, RULES, ABBREV
+import rules_ext                       # D2–D5 rule packs (synthetic signals)
 import scan_result
+
+ALL_DIMS = frozenset({"D1", "D2", "D3", "D4", "D5"})
 
 Field = scanner.Field
 ABBREV = scanner.ABBREV
@@ -184,33 +187,33 @@ def gen_org(name, industry, total_fields, defect_ratio, n_objects, mode, seed):
 
 SPECS = [
     # Ready / Conditionally Ready — clean, modern orgs
-    ("Northwind Robotics",       "Mfg",     55, 0.06, 2, "Source"),
-    ("Cobalt Analytics",         "Saas",    60, 0.10, 2, "Source"),
-    ("Vireo Health Cloud",       "Health",  65, 0.16, 2, "Org"),
-    ("Meridian Wealth",          "Fin",     75, 0.22, 3, "Hybrid"),
-    ("Solstice Retail Group",    "Retail",  85, 0.28, 3, "Source"),
+    ("Northwind Robotics",       "Mfg",     50, 0.06, 2, "Source"),
+    ("Cobalt Analytics",         "Saas",    52, 0.10, 2, "Source"),
+    ("Vireo Health Cloud",       "Health",  58, 0.16, 2, "Org"),
+    ("Meridian Wealth",          "Fin",     66, 0.22, 3, "Hybrid"),
+    ("Solstice Retail Group",    "Retail",  74, 0.28, 3, "Source"),
     # Foundational Work Required — mid-life orgs carrying real debt
-    ("Anchor Freight Systems",   "Logi",    95, 0.40, 3, "Org"),
-    ("Bluepeak Telecom",         "Telco",  100, 0.44, 3, "Source"),
-    ("Cascade Insurance",        "Ins",    100, 0.48, 3, "Org"),
-    ("Harborline Bank",          "Fin",    105, 0.50, 3, "Hybrid"),
-    ("Pinnacle Energy",          "Energy", 100, 0.52, 3, "Source"),
-    ("Trailhead Education",      "Edu",     95, 0.46, 3, "Org"),
-    ("Fathom Media Networks",    "Media",  100, 0.47, 3, "Source"),
+    ("Anchor Freight Systems",   "Logi",    80, 0.42, 3, "Org"),
+    ("Bluepeak Telecom",         "Telco",   84, 0.46, 3, "Source"),
+    ("Cascade Insurance",        "Ins",     84, 0.50, 3, "Org"),
+    ("Harborline Bank",          "Fin",     88, 0.52, 3, "Hybrid"),
+    ("Pinnacle Energy",          "Energy",  84, 0.54, 3, "Source"),
+    ("Trailhead Education",      "Edu",     80, 0.48, 3, "Org"),
+    ("Fathom Media Networks",    "Media",   84, 0.49, 3, "Source"),
     # Not Ready — old, heavily-accreted enterprise orgs
-    ("Gateway Health Alliance",  "Health", 110, 0.72, 3, "Org"),
-    ("Irongate Manufacturing",   "Mfg",    115, 0.80, 4, "Source"),
-    ("Summit Telecom Legacy",    "Telco",  115, 0.84, 4, "Org"),
-    ("Delta Logistics Intl",     "Logi",   110, 0.78, 4, "Hybrid"),
-    ("Crownpoint Insurance",     "Ins",    110, 0.82, 4, "Org"),
-    ("Old Mill Bancorp",         "Fin",    115, 0.86, 4, "Source"),
-    ("Redwood Utilities",        "Energy", 105, 0.76, 3, "Org"),
-    ("Beacon Public Sector",     "Gov",    110, 0.80, 4, "Source"),
+    ("Gateway Health Alliance",  "Health",  90, 0.74, 3, "Org"),
+    ("Irongate Manufacturing",   "Mfg",     94, 0.82, 4, "Source"),
+    ("Summit Telecom Legacy",    "Telco",   94, 0.86, 4, "Org"),
+    ("Delta Logistics Intl",     "Logi",    90, 0.80, 4, "Hybrid"),
+    ("Crownpoint Insurance",     "Ins",     92, 0.84, 4, "Org"),
+    ("Old Mill Bancorp",         "Fin",     96, 0.88, 4, "Source"),
+    ("Redwood Utilities",        "Energy",  88, 0.78, 3, "Org"),
+    ("Beacon Public Sector",     "Gov",     92, 0.82, 4, "Source"),
     # Time series — one org remediating over four quarters (burn-down)
-    ("Helios Airlines · 2025-Q1", "Travel", 115, 0.82, 4, "Org"),
-    ("Helios Airlines · 2025-Q2", "Travel", 115, 0.58, 4, "Org"),
-    ("Helios Airlines · 2025-Q3", "Travel", 115, 0.36, 4, "Org"),
-    ("Helios Airlines · 2025-Q4", "Travel", 115, 0.18, 4, "Org"),
+    ("Helios Airlines · 2025-Q1", "Travel",  96, 0.84, 4, "Org"),
+    ("Helios Airlines · 2025-Q2", "Travel",  96, 0.58, 4, "Org"),
+    ("Helios Airlines · 2025-Q3", "Travel",  96, 0.36, 4, "Org"),
+    ("Helios Airlines · 2025-Q4", "Travel",  96, 0.18, 4, "Org"),
 ]
 
 
@@ -219,9 +222,12 @@ def build_portfolio():
     for i, (name, industry, size, ratio, nobj, mode) in enumerate(SPECS):
         _, m, fields = gen_org(name, industry, size, ratio, nobj, mode, seed=1000 + i)
         findings = []
-        for _, fn in scanner.RULES:
+        for _, fn in scanner.RULES:            # D1 rules on real generated fields
             findings.extend(fn(fields))
-        scans.append(scan_result.build(fields, findings, name, scan_mode=m))
+        objects = sorted({f.object_name for f in fields})
+        findings.extend(rules_ext.dimension_findings(objects, ratio, random.Random(5000 + i)))
+        scans.append(scan_result.build(fields, findings, name, scan_mode=m,
+                                       assessed_dims=ALL_DIMS))
     return scans
 
 
