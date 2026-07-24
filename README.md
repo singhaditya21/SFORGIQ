@@ -31,7 +31,7 @@ orgiq scan --org my-client-org      # full scan
 | Scanner (`scanner/`) | Working spike. 5 D1 rules, source mode, runs on real metadata |
 | Data generator (`fixtures/`) | Working. CSV generator + a messy-org metadata fixture |
 | Salesforce objects (`salesforce/`) | **Deployed to `orgiq`** (3 objects, 32 fields) + `OrgIQ_Admin` permission set |
-| Salesforce data | **Loaded & confirmed** — 1 scan, 5 dimension scores, 48 findings |
+| Salesforce data | **Loaded & confirmed** — 24-org portfolio: 24 scans, 120 dimension scores, 1,827 findings (~80% of DE storage) |
 | Backlog CSV output | Working. Threshold-gated Jira CSV, remediation + provisional effort points |
 | Dashboard (`dashboard/`) | **Live on GitHub Pages.** React app, demo mode reads real org data |
 
