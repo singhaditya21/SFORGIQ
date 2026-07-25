@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   portfolioStats, bandBreakdown, portfolioFindingBreakdown, dimensionAverages,
   orgRows, heatmapRows, flattenFindings, applyFindingFilter, groundingEconomics,
+  driftByOrg,
   EMPTY_FILTER, findingFilterActive, ruleLabel, BAND_META,
   backlogCsv, downloadCsv,
 } from '../lib/data.js'
@@ -13,6 +14,7 @@ import Quadrant from '../components/Quadrant.jsx'
 import FindingAnalytics from '../components/FindingAnalytics.jsx'
 import DimensionAverages from '../components/DimensionAverages.jsx'
 import Heatmap from '../components/Heatmap.jsx'
+import DriftPanel from '../components/DriftPanel.jsx'
 import OrgGrid from '../components/OrgGrid.jsx'
 import OrgsTable from '../components/OrgsTable.jsx'
 import PortfolioFindings from '../components/PortfolioFindings.jsx'
@@ -36,6 +38,7 @@ export default function PortfolioView({ data }) {
   // shape of the estate, not of the current drill-down.
   const econ = useMemo(() => groundingEconomics(scans), [scans])
   const rows = useMemo(() => orgRows(scans), [scans])
+  const drift = useMemo(() => driftByOrg(scans), [scans])
   const allFindings = useMemo(() => flattenFindings(scans), [scans])
 
   const bandOrgIds = useMemo(
@@ -152,6 +155,18 @@ export default function PortfolioView({ data }) {
                             onRule={(r) => toggle('rule', r)}
                             onSeverity={(s) => toggle('severity', s)} />
         </section>
+
+        {drift.length > 0 && (
+          <section className="card card--full">
+            <div className="card__head">
+              <h2 className="card__title">Where the estate disagrees with itself</h2>
+              <span className="card__hint">
+                {drift.length} org(s) drifted from the reference · click to open
+              </span>
+            </div>
+            <DriftPanel rows={drift} />
+          </section>
+        )}
 
         <section className="card card--full">
           <div className="card__head">

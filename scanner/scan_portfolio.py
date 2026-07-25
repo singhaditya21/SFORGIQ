@@ -34,6 +34,7 @@ import json
 import random
 
 import backlog                         # gate + row shaping for the Jira CSV
+import drift as drift_mod
 import density                         # REMOVABLE_KEYS — the payload breakdown buckets
 import enterprises
 import metadata as md                  # Flow / Apex / trigger / permission-set model
@@ -578,7 +579,11 @@ def build_portfolio():
     """
     scans, orgs = [], []
     i = -1
+    # name -> (index into `scans`, index into `orgs`) so drift can be folded back
+    # into the right records once the whole estate has been generated.
+    pending = {}
     for ent in enterprises.ENTERPRISES:
+        snapshots = []
         for spec in ent["orgs"]:
             (org_name, org_type, ratio, drift, refreshed, notes) = spec[:6]
             m, history = (spec[6], spec[7]) if len(spec) > 6 else ("Org", 0)
@@ -620,6 +625,8 @@ def build_portfolio():
                                            org_overrides={"last_refreshed": refreshed,
                                                           "notes": notes}))
             orgs.append((name, findings))
+            snapshots.append(drift_mod.snapshot_from(name, org_type, fields, org_meta))
+            pending[name] = (len(scans) - 1, len(orgs) - 1)
 
             # Prior quarters for orgs that carry a history. Same org, earlier
             # date, more debt — remediation running backwards from today, which
@@ -649,6 +656,13 @@ def build_portfolio():
                     report_refs=pm.report_refs, code_tokens=pct,
                     coverage=pm.coverage(), now=past, org_type=org_type,
                     org_overrides={"last_refreshed": refreshed, "notes": notes}))
+        # Drift is an estate-level question: it needs every org in the estate,
+        # so it runs once they all exist rather than per org as they are built.
+        for org_name, dfs in drift_mod.compare_estate(snapshots).items():
+            si, oi = pending[org_name]
+            orgs[oi] = (org_name, orgs[oi][1] + dfs)
+            scans[si]["findings"].extend(
+                scan_result.finding_rows(dfs, scans[si]["scan"]["external_scan_id"]))
     return scans, orgs
 
 

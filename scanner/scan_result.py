@@ -307,6 +307,48 @@ def infer_org_type(name: str) -> str:
     return "Other"
 
 
+def finding_rows(findings, scan_external_id: str) -> list:
+    """Shape raw Findings into loadable finding records.
+
+    Split out of build() because drift findings cannot exist when build()
+    runs: they compare an org against the rest of its estate, so they are
+    produced once every org has been scanned. They still have to be shaped
+    identically — one row builder, or the two paths drift apart.
+    """
+    rows = []
+    for f in findings:
+        play = backlog._play(f.rule_id)
+        evidence = f.evidence if not f.detail else f"{f.evidence} — {f.detail}"
+        rows.append({
+            # Keyed on the SCAN, not the org. A finding is a child of one scan,
+            # and now that scan ids carry their date an org holds several — so an
+            # org-keyed id would collide the moment two of its scans coexist.
+            # Re-running the same scan is still idempotent, which is what the
+            # finding lifecycle relies on: same day, same scan id, same finding id.
+            "external_finding_id": backlog._external_id(f, scan_external_id),
+            "rule_id": f.rule_id,
+            "dimension": f.dimension,
+            "severity": f.severity,
+            "confidence": f.confidence,
+            "component_type": backlog._component_type(f),
+            "component_api_name": f.component,
+            "evidence": evidence,
+            "epic": play["epic"],
+            "remediation": play["remediation"],
+            # Carried alongside the fix so a record says how the owner knows the
+            # work is done — otherwise only the Jira CSV ever shows it.
+            "acceptance_criteria": play["acceptance"],
+            "effort_points": play["points"],
+            "blast_radius": 0,
+            # Tool of origin, not the scanned org (that is scan.target_org).
+            "source": getattr(f, "source", "") or DEFAULT_FINDING_SOURCE,
+            "emits_to_backlog": backlog.emits_to_backlog(f),
+            "rule_maturity": "experimental",
+            "status": "Open",
+        })
+    return rows
+
+
 def build(fields, findings, source: str, scan_mode: str = "Source",
           assessed_dims=frozenset({"D1"}), now: datetime | None = None,
           report_refs=None, code_tokens=frozenset(), coverage=None,
@@ -369,40 +411,8 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
         "scan_timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.000+0000"),
     }
 
-    finding_rows = []
-    for f in findings:
-        play = backlog._play(f.rule_id)
-        evidence = f.evidence if not f.detail else f"{f.evidence} — {f.detail}"
-        finding_rows.append({
-            # Keyed on the SCAN, not the org. A finding is a child of one scan,
-            # and now that scan ids carry their date an org holds several — so an
-            # org-keyed id would collide the moment two of its scans coexist.
-            # Re-running the same scan is still idempotent, which is what the
-            # finding lifecycle relies on: same day, same scan id, same finding id.
-            "external_finding_id": backlog._external_id(f, scan["external_scan_id"]),
-            "rule_id": f.rule_id,
-            "dimension": f.dimension,
-            "severity": f.severity,
-            "confidence": f.confidence,
-            "component_type": backlog._component_type(f),
-            "component_api_name": f.component,
-            "evidence": evidence,
-            "epic": play["epic"],
-            "remediation": play["remediation"],
-            # Carried alongside the fix so a record says how the owner knows the
-            # work is done — otherwise only the Jira CSV ever shows it.
-            "acceptance_criteria": play["acceptance"],
-            "effort_points": play["points"],
-            "blast_radius": 0,
-            # Tool of origin, not the scanned org (that is scan.target_org).
-            "source": getattr(f, "source", "") or DEFAULT_FINDING_SOURCE,
-            "emits_to_backlog": backlog.emits_to_backlog(f),
-            "rule_maturity": "experimental",
-            "status": "Open",
-        })
-
-    return {"org": org, "scan": scan,
-            "dimensions": dim_rows, "findings": finding_rows}
+    return {"org": org, "scan": scan, "dimensions": dim_rows,
+            "findings": finding_rows(findings, scan["external_scan_id"])}
 
 
 def write_json(result: dict, path: str):

@@ -291,6 +291,44 @@ _PLAYBOOK = {
                        "2. Verify an agent-initiated write cannot re-fire the automation.",
         "acceptance": "Automation is recursion-safe; re-scan clears the finding.",
     },
+    "DRIFT.BEHIND_REFERENCE": {
+        "epic": "Realign environments with production", "points": 5,
+        "remediation": "1. Confirm which of the missing components are genuinely absent "
+                       "rather than renamed.\n"
+                       "2. Refresh this org from production, or deploy the missing "
+                       "components if a refresh would lose in-flight work.\n"
+                       "3. Re-run any agent validation done here — the earlier run did "
+                       "not cover production's schema.",
+        "acceptance": "This org carries the production components an agent is validated "
+                      "against; re-scan reports no DRIFT.BEHIND_REFERENCE.",
+    },
+    "DRIFT.AHEAD_OF_REFERENCE": {
+        "epic": "Promote or retire unreleased components", "points": 3,
+        "remediation": "1. Separate genuinely in-flight work from components that were "
+                       "built here and never promoted.\n"
+                       "2. Promote what is ready; delete what was abandoned.\n"
+                       "3. Record anything deliberately org-local so it stops reading as drift.",
+        "acceptance": "Every component here is either released, in an open change, or "
+                      "documented as org-local.",
+    },
+    "DRIFT.AUTOMATION_DIVERGED": {
+        "epic": "Realign automation across environments", "points": 8,
+        "remediation": "1. Diff the triggers and flows against the reference org.\n"
+                       "2. Bring the automation chain into line, or record the difference "
+                       "as intended with the reason.\n"
+                       "3. Re-test an agent write in both orgs and confirm the same chain fires.",
+        "acceptance": "An identical agent write triggers the same automation in this org "
+                      "and the reference; re-scan reports no DRIFT.AUTOMATION_DIVERGED.",
+    },
+    "DRIFT.PERMISSION_DIVERGED": {
+        "epic": "Realign agent permissions across environments", "points": 5,
+        "remediation": "1. Compare the permission sets against the reference org.\n"
+                       "2. Align the agent's permission set specifically — its reach is "
+                       "what a blast-radius assessment rests on.\n"
+                       "3. Re-run the D4 assessment once aligned.",
+        "acceptance": "The agent identity holds the same permissions in this org as in the "
+                      "reference; re-scan reports no DRIFT.PERMISSION_DIVERGED.",
+    },
     "D3.INACTIVE_ACTION": {
         "epic": "Activate or retire dormant flows", "points": 2,
         "remediation": "1. Decide whether the flow is still needed.\n"

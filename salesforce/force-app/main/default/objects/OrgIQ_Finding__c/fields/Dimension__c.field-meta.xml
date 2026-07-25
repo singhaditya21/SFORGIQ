@@ -34,6 +34,13 @@
                 <default>false</default>
                 <label>D5</label>
             </value>
+            <!-- Drift is a property of a PAIR of orgs, not of this one, so it
+                 sits outside D1-D5 and never penalises a dimension score. -->
+            <value>
+                <fullName>Drift</fullName>
+                <default>false</default>
+                <label>Drift (cross-org)</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

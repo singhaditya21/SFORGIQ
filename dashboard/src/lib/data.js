@@ -75,6 +75,26 @@ export const RULE_META = {
       + 'integrations and managed packages, not just the committed report metadata. '
       + 'Re-scan reports no D1.UNREFERENCED_FIELD for this field.',
   },
+  'DRIFT.BEHIND_REFERENCE': {
+    label: 'Behind production',
+    epic: 'Realign environments with production',
+    acceptance: 'This org carries the production components an agent is validated against.',
+  },
+  'DRIFT.AHEAD_OF_REFERENCE': {
+    label: 'Ahead of production',
+    epic: 'Promote or retire unreleased components',
+    acceptance: 'Every component here is released, in an open change, or documented as org-local.',
+  },
+  'DRIFT.AUTOMATION_DIVERGED': {
+    label: 'Automation diverged',
+    epic: 'Realign automation across environments',
+    acceptance: 'An identical agent write triggers the same automation in this org and the reference.',
+  },
+  'DRIFT.PERMISSION_DIVERGED': {
+    label: 'Permissions diverged',
+    epic: 'Realign agent permissions across environments',
+    acceptance: 'The agent identity holds the same permissions here as in the reference org.',
+  },
   'D2.LOW_FILL_RATE': {
     label: 'Low fill rate',
     epic: 'Backfill under-populated fields',
@@ -510,6 +530,26 @@ export function scansForEnterprise(scans, name) {
 // scan sits next to last quarter's. Everything that answers "what is the estate
 // like" must read the LATEST scan per org, or one remediated org appears four
 // times and drags its own average down.
+// Cross-org drift, grouped by the org that carries it. Kept separate from the
+// dimension rollups on purpose: drift describes a PAIR of orgs, so folding it
+// into this org's D1-D5 scores would grade one org for another's state.
+export function driftByOrg(scans) {
+  const rows = []
+  for (const s of scans) {
+    const d = s.findings.filter((f) => f.dimension === 'Drift')
+    if (d.length) {
+      rows.push({
+        externalId: s.scan.externalId,
+        org: s.scan.targetOrg,
+        findings: d,
+        worst: ['Critical', 'High', 'Medium', 'Low'].find((sev) => d.some((f) => f.severity === sev)) || 'Low',
+      })
+    }
+  }
+  const rank = { Critical: 0, High: 1, Medium: 2, Low: 3 }
+  return rows.sort((a, b) => rank[a.worst] - rank[b.worst] || b.findings.length - a.findings.length)
+}
+
 export function latestScans(scans) {
   const best = new Map()
   for (const s of scans) {
