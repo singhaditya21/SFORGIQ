@@ -593,6 +593,128 @@ def _write_reports(base: Path) -> tuple:
     return len(REPORTS), len(DASHBOARDS)
 
 
+# --- persona material: layout, profile, approval, validation rule ------------
+# A persona is not one file. These make the fixture able to answer "what can
+# this identity actually do", and each carries a defect the persona rules find.
+
+LAYOUTS = {
+    # surfaces only a slice of Billing_Account__c — the rest is access with no
+    # process behind it
+    "Billing_Account__c-Billing Layout": """<?xml version="1.0" encoding="UTF-8"?>
+<Layout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <layoutSections>
+        <layoutColumns>
+            <layoutItems><behavior>Required</behavior><field>Account_Status__c</field></layoutItems>
+            <layoutItems><behavior>Edit</behavior><field>MRR__c</field></layoutItems>
+            <layoutItems><behavior>Edit</behavior><field>Customer_Tier__c</field></layoutItems>
+            <layoutItems><behavior>Readonly</behavior><field>Credit_Balance__c</field></layoutItems>
+        </layoutColumns>
+    </layoutSections>
+    <customButtons>Recalculate_Balance</customButtons>
+</Layout>
+""",
+}
+
+PROFILES = {
+    # can edit three objects but is only ever shown one -> D4.PERSONA_BEYOND_PROCESS
+    "Service_Agent": """<?xml version="1.0" encoding="UTF-8"?>
+<Profile xmlns="http://soap.sforce.com/2006/04/metadata">
+    <custom>true</custom>
+    <userPermissions><enabled>true</enabled><name>ViewAllData</name></userPermissions>
+    <objectPermissions>
+        <object>Billing_Account__c</object>
+        <allowRead>true</allowRead><allowEdit>true</allowEdit>
+        <allowDelete>true</allowDelete>
+        <modifyAllRecords>false</modifyAllRecords><viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <object>Service_Order__c</object>
+        <allowRead>true</allowRead><allowEdit>true</allowEdit>
+        <allowDelete>false</allowDelete>
+        <modifyAllRecords>false</modifyAllRecords><viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <object>Legacy_Customer__c</object>
+        <allowRead>true</allowRead><allowEdit>true</allowEdit>
+        <allowDelete>false</allowDelete>
+        <modifyAllRecords>false</modifyAllRecords><viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <layoutAssignments><layout>Billing_Account__c-Billing Layout</layout></layoutAssignments>
+    <flowAccesses><enabled>true</enabled><flow>Create_Service_Order</flow></flowAccesses>
+</Profile>
+""",
+    # No blanket permission, but can delete on two objects -> D4.PERSONA_CAN_DELETE.
+    # Separate from Service_Agent on purpose: a persona holding ViewAllData
+    # suppresses the delete finding, because next to blanket access it is noise.
+    "Ops_Integration": """<?xml version="1.0" encoding="UTF-8"?>
+<Profile xmlns="http://soap.sforce.com/2006/04/metadata">
+    <custom>true</custom>
+    <objectPermissions>
+        <object>Service_Order__c</object>
+        <allowRead>true</allowRead><allowEdit>true</allowEdit>
+        <allowDelete>true</allowDelete>
+        <modifyAllRecords>false</modifyAllRecords><viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <object>Legacy_Customer__c</object>
+        <allowRead>true</allowRead><allowEdit>true</allowEdit>
+        <allowDelete>true</allowDelete>
+        <modifyAllRecords>false</modifyAllRecords><viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+</Profile>
+""",
+}
+
+APPROVALS = {
+    "Billing_Account__c.Credit_Limit_Increase": """<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Credit Limit Increase</label>
+    <active>true</active>
+    <entryCriteriaBooleanFilter>1 AND 2</entryCriteriaBooleanFilter>
+    <approvalStep>
+        <label>Team Leader</label>
+        <assignedApprover><approver><type>Manager</type></approver></assignedApprover>
+    </approvalStep>
+    <approvalStep>
+        <label>Credit Committee</label>
+        <assignedApprover><approver><type>Queue</type></approver></assignedApprover>
+    </approvalStep>
+</ApprovalProcess>
+""",
+}
+
+VALIDATION_RULES = {
+    "Billing_Account__c": {
+        "Require_Tier_For_Active": """<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Require_Tier_For_Active</fullName>
+    <active>true</active>
+    <errorConditionFormula>AND(ISPICKVAL(Account_Status__c,"Active"), ISBLANK(TEXT(Customer_Tier__c)))</errorConditionFormula>
+    <errorMessage>An active billing account must carry a customer tier.</errorMessage>
+</ValidationRule>
+""",
+    },
+}
+
+
+def _write_persona(base: Path) -> int:
+    n = 0
+    for name, xml in LAYOUTS.items():
+        d = base / "layouts"; d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.layout-meta.xml").write_text(xml); n += 1
+    for name, xml in PROFILES.items():
+        d = base / "profiles"; d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.profile-meta.xml").write_text(xml); n += 1
+    for name, xml in APPROVALS.items():
+        d = base / "approvalProcesses"; d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.approvalProcess-meta.xml").write_text(xml); n += 1
+    for obj, rules in VALIDATION_RULES.items():
+        d = base / "objects" / obj / "validationRules"; d.mkdir(parents=True, exist_ok=True)
+        for name, xml in rules.items():
+            (d / f"{name}.validationRule-meta.xml").write_text(xml); n += 1
+    return n
+
+
 def _write_extras(base: Path) -> int:
     """Write the Flow/Apex/trigger/permission-set files. Returns file count."""
     n = 0
@@ -630,6 +752,7 @@ def main():
             n_fld += 1
 
     default = Path(a.out) / "main" / "default"
+    n_persona = _write_persona(Path(a.out) / 'main' / 'default')
     n_extra = _write_extras(default)
     n_rep, n_dash = _write_reports(default)
 
@@ -637,7 +760,8 @@ def main():
     # tie-break on name so the "load-bearing" field named here is stable
     top, top_n = max(counts.items(), key=lambda kv: (kv[1], kv[0]))
     print(f"wrote {n_obj} objects, {n_fld} fields, {n_extra} flow/apex/trigger/permset "
-          f"files, {n_rep} reports, {n_dash} dashboards under {default}")
+          f"files, {n_rep} reports, {n_dash} dashboards, {n_persona} persona file(s) "
+          f"under {default}")
     print(f"  report refs: {len(counts)} of {n_fld} fields referenced, "
           f"{n_fld - len(counts)} referenced by nothing; "
           f"most-referenced {top} ({top_n} files)")

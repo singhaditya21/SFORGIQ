@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Credit Limit Increase</label>
+    <active>true</active>
+    <entryCriteriaBooleanFilter>1 AND 2</entryCriteriaBooleanFilter>
+    <approvalStep>
+        <label>Team Leader</label>
+        <assignedApprover><approver><type>Manager</type></approver></assignedApprover>
+    </approvalStep>
+    <approvalStep>
+        <label>Credit Committee</label>
+        <assignedApprover><approver><type>Queue</type></approver></assignedApprover>
+    </approvalStep>
+</ApprovalProcess>

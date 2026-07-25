@@ -749,11 +749,16 @@ def assemble_findings(evidence: Evidence, external_scan=None) -> Assembled:
 
     Merging mutates the surviving findings, which is why this runs once, before
     scoring and before the backlog."""
+    import persona as persona_mod        # late, for the same import cycle
     import rules_ext                     # late: rules_ext imports Finding from here
 
     meta = evidence.meta
     findings = all_d1_findings(evidence.fields, meta.report_refs, evidence.code_tokens)
     findings.extend(rules_ext.all_findings(meta))
+    # An agent runs as a persona, so what that persona can reach IS the agent's
+    # blast radius. Nothing fires unless the org actually carries profiles or
+    # permission sets — an empty surface is not a safe one, it is an unread one.
+    findings.extend(persona_mod.persona_findings(persona_mod.build_personas(meta)))
     kept, withheld = meta.drop_blocked(findings)
 
     ingested = list(external_scan.findings) if external_scan is not None else []
@@ -1013,12 +1018,18 @@ def main():
               f"(severity>=Medium AND confidence>=Medium)")
 
     if a.scan_json:
+        import persona as persona_mod
         result = scan_result.build(evidence.fields, findings, source,
                                    scan_mode=evidence.mode,
                                    assessed_dims=evidence.assessed_dims,
                                    report_refs=evidence.meta.report_refs,
                                    code_tokens=evidence.code_tokens,
-                                   coverage=evidence.coverage)
+                                   coverage=evidence.coverage,
+                                   # How many reports, layouts and personas depend
+                                   # on each component — the number that lets a
+                                   # backlog be ordered by consequence, not only
+                                   # by severity.
+                                   blast=persona_mod.blast_index(evidence.meta))
         scan_result.write_json(result, a.scan_json)
         s = result["scan"]
         partial = [d["dimension"][:2] for d in result["dimensions"]

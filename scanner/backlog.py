@@ -329,6 +329,32 @@ _PLAYBOOK = {
         "acceptance": "The agent identity holds the same permissions in this org as in the "
                       "reference; re-scan reports no DRIFT.PERMISSION_DIVERGED.",
     },
+    "D4.PERSONA_UNBOUNDED": {
+        "epic": "Bound the agent persona's reach", "points": 8,
+        "remediation": "1. List what the agent's tasks genuinely require.\n"
+                       "2. Remove the blanket permission and grant scoped object and "
+                       "field access instead.\n"
+                       "3. Re-run the agent's test suite under the tightened persona — "
+                       "blanket rights hide every sharing mistake underneath them.",
+        "acceptance": "The persona grants no Modify All Data or View All Data; the agent "
+                      "still completes its tasks; re-scan clears the finding.",
+    },
+    "D4.PERSONA_BEYOND_PROCESS": {
+        "epic": "Align persona access with its process", "points": 5,
+        "remediation": "1. Compare the objects this persona can edit with the ones its "
+                       "layouts actually surface.\n"
+                       "2. Revoke edit access on objects it has no process for, or add the "
+                       "layout if the process is real and undocumented.",
+        "acceptance": "Every object the persona can edit is one it has a process for; "
+                      "re-scan clears the finding.",
+    },
+    "D4.PERSONA_CAN_DELETE": {
+        "epic": "Remove unnecessary delete rights", "points": 3,
+        "remediation": "1. Confirm whether any agent task requires a hard delete.\n"
+                       "2. Prefer a status change or soft delete; revoke delete where it "
+                       "is not needed.",
+        "acceptance": "Delete is granted only where a task requires it; re-scan clears it.",
+    },
     "D3.INACTIVE_ACTION": {
         "epic": "Activate or retire dormant flows", "points": 2,
         "remediation": "1. Decide whether the flow is still needed.\n"

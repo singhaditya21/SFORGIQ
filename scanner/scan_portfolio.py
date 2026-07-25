@@ -35,6 +35,7 @@ import random
 
 import backlog                         # gate + row shaping for the Jira CSV
 import drift as drift_mod
+import persona as persona_mod
 import density                         # REMOVABLE_KEYS — the payload breakdown buckets
 import enterprises
 import metadata as md                  # Flow / Apex / trigger / permission-set model
@@ -604,6 +605,9 @@ def build_portfolio():
             code_tokens = scanner.code_identifiers(org_meta)
             findings = scanner.all_d1_findings(fields, org_meta.report_refs, code_tokens)
             findings.extend(rules_ext.all_findings(org_meta))   # the real D2–D5 packs
+            personas = persona_mod.build_personas(org_meta)
+            findings.extend(persona_mod.persona_findings(personas))
+            blast = persona_mod.blast_index(org_meta, personas)
             # The same withholding a real scan applies: a rule whose signals were
             # never collected does not get to report. On this corpus it is a no-op
             # for every org — the generator only produces evidence the mode can
@@ -621,7 +625,7 @@ def build_portfolio():
                                            report_refs=org_meta.report_refs,
                                            code_tokens=code_tokens,
                                            coverage=org_meta.coverage(),
-                                           org_type=org_type,
+                                           org_type=org_type, blast=blast,
                                            org_overrides={"last_refreshed": refreshed,
                                                           "notes": notes}))
             orgs.append((name, findings))

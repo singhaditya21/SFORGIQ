@@ -130,6 +130,21 @@ export const RULE_META = {
     epic: 'Activate or retire dormant flows',
     acceptance: 'No Draft/Obsolete flow is exposed as an agent action; re-scan clears it.',
   },
+  'D4.PERSONA_UNBOUNDED': {
+    label: 'Persona unbounded',
+    epic: "Bound the agent persona's reach",
+    acceptance: 'The persona grants no Modify All Data or View All Data and the agent still completes its tasks.',
+  },
+  'D4.PERSONA_BEYOND_PROCESS': {
+    label: 'Access without a process',
+    epic: 'Align persona access with its process',
+    acceptance: 'Every object the persona can edit is one it has a process for.',
+  },
+  'D4.PERSONA_CAN_DELETE': {
+    label: 'Persona can delete',
+    epic: 'Remove unnecessary delete rights',
+    acceptance: 'Delete is granted only where a task requires it.',
+  },
   'D4.MODIFY_ALL_DATA': {
     label: 'Modify All Data',
     epic: 'Remove Modify All Data from the agent',

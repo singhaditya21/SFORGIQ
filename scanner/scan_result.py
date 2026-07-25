@@ -50,6 +50,7 @@ from datetime import datetime, timezone
 
 import backlog  # sibling module (remediation, effort, gate, external id)
 import density  # sibling module (deterministic grounding estimates)
+import persona as persona_mod  # capability surfaces + blast radius
 import metadata as sfmeta  # signal registry: coverage threshold + status vocabulary
 
 RUBRIC_VERSION = "0.2.0-spike"
@@ -307,13 +308,18 @@ def infer_org_type(name: str) -> str:
     return "Other"
 
 
-def finding_rows(findings, scan_external_id: str) -> list:
+def finding_rows(findings, scan_external_id: str, blast=None) -> list:
     """Shape raw Findings into loadable finding records.
 
     Split out of build() because drift findings cannot exist when build()
     runs: they compare an org against the rest of its estate, so they are
     produced once every org has been scanned. They still have to be shaped
     identically — one row builder, or the two paths drift apart.
+
+    `blast` is scanner/persona.blast_index() — how many reports, layouts and
+    personas depend on each component. Without it every finding carries the 0
+    this field held from the first commit, and a backlog can be ordered by
+    severity but never by consequence.
     """
     rows = []
     for f in findings:
@@ -339,7 +345,9 @@ def finding_rows(findings, scan_external_id: str) -> list:
             # work is done — otherwise only the Jira CSV ever shows it.
             "acceptance_criteria": play["acceptance"],
             "effort_points": play["points"],
-            "blast_radius": 0,
+            # 0 when no dependency index was supplied — which means "not
+            # measured", not "nothing depends on this".
+            "blast_radius": (persona_mod.radius_for(f.component, blast) if blast else 0),
             # Tool of origin, not the scanned org (that is scan.target_org).
             "source": getattr(f, "source", "") or DEFAULT_FINDING_SOURCE,
             "emits_to_backlog": backlog.emits_to_backlog(f),
@@ -352,7 +360,7 @@ def finding_rows(findings, scan_external_id: str) -> list:
 def build(fields, findings, source: str, scan_mode: str = "Source",
           assessed_dims=frozenset({"D1"}), now: datetime | None = None,
           report_refs=None, code_tokens=frozenset(), coverage=None,
-          org_type: str = "", org_overrides: dict = None) -> dict:
+          org_type: str = "", org_overrides: dict = None, blast=None) -> dict:
     """`report_refs` / `code_tokens` are the same reference evidence the D1 rules
     run on. They are optional and trail the older arguments so existing callers
     keep working, but a caller that has them should pass them: without them the
@@ -412,7 +420,7 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
     }
 
     return {"org": org, "scan": scan, "dimensions": dim_rows,
-            "findings": finding_rows(findings, scan["external_scan_id"])}
+            "findings": finding_rows(findings, scan["external_scan_id"], blast)}
 
 
 def write_json(result: dict, path: str):

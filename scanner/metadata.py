@@ -123,6 +123,84 @@ class RecordStats:
     notes: tuple = ()             # caveats worth printing next to the numbers
 
 
+# ------------------------------------------------ persona-facing metadata
+#
+# What a *person* can do is not one file. A profile grants object and field
+# access; a layout decides what they actually see and which buttons they get; a
+# flow is a process they can start; an approval process is one they take part
+# in; a validation rule is what will stop them. Read together these reconstruct
+# a persona's capability surface — and an agent runs as a user, so the agent's
+# capability is one of these surfaces.
+
+@dataclass
+class LayoutMeta:
+    """A page layout — the fields and actions a persona actually sees.
+
+    Field-level security says what a persona *may* read; the layout says what is
+    put in front of them. The gap between the two is ordinary, and it matters:
+    a field granted but never surfaced is a different remediation decision from
+    one on every screen."""
+    api_name: str
+    object_name: str = ""
+    fields: tuple = ()              # api names placed on the layout
+    required_fields: tuple = ()
+    actions: tuple = ()             # buttons / quick actions exposed
+    path: str = ""
+
+
+@dataclass
+class ApprovalStep:
+    label: str = ""
+    approver_type: str = ""         # Manager | Related User | User | Queue | ...
+    approvers: tuple = ()
+
+
+@dataclass
+class ApprovalProcessMeta:
+    """The closest thing in metadata to a written-down business process: entry
+    criteria, ordered steps, and who signs each one."""
+    api_name: str
+    object_name: str = ""
+    label: str = ""
+    active: bool = True
+    entry_criteria: str = ""
+    steps: tuple = ()               # ApprovalStep
+    path: str = ""
+
+
+@dataclass
+class ValidationRuleMeta:
+    """What will refuse a persona's save. An agent hitting one mid-conversation
+    fails in a way the user cannot act on, so they are part of the action
+    surface, not a footnote."""
+    api_name: str
+    object_name: str = ""
+    active: bool = True
+    error_message: str = ""
+    formula: str = ""
+    path: str = ""
+
+
+@dataclass
+class ProfileMeta:
+    """A profile, in the same shape as a permission set.
+
+    Salesforce is moving access to permission sets, but every org still has
+    profiles and most still carry real grants, so both have to be read. The
+    shared shape means the D4 rules do not care which one granted the access —
+    only that something did."""
+    api_name: str
+    label: str = ""
+    user_permissions: list = dc_field(default_factory=list)
+    object_perms: list = dc_field(default_factory=list)      # ObjectPerm
+    layout_assignments: tuple = ()                            # layout api names
+    flow_access: tuple = ()                                   # flows this profile may run
+    path: str = ""
+
+    def has_perm(self, name: str) -> bool:
+        return name in self.user_permissions
+
+
 @dataclass
 class ReportRefs:
     """How often each field is consumed by a report or dashboard.
@@ -397,6 +475,12 @@ class OrgMetadata:
     flows: list = dc_field(default_factory=list)
     apex: list = dc_field(default_factory=list)
     triggers: list = dc_field(default_factory=list)
+    # Persona-facing metadata. Optional and trailing, so every existing caller
+    # and every in-memory OrgMetadata keeps working untouched.
+    layouts: list = dc_field(default_factory=list)
+    profiles: list = dc_field(default_factory=list)
+    approval_processes: list = dc_field(default_factory=list)
+    validation_rules: list = dc_field(default_factory=list)
     permission_sets: list = dc_field(default_factory=list)
     record_stats: list = dc_field(default_factory=list)
     # Deliberately last: existing callers construct the five lists above.
@@ -772,6 +856,124 @@ def parse_reports(root: Path) -> ReportRefs:
     return out
 
 
+def parse_layouts(root: Path) -> list:
+    out = []
+    for p in root.rglob("*.layout-meta.xml"):
+        try:
+            r = ET.parse(p).getroot()
+        except (ET.ParseError, OSError):
+            continue
+        fields, required, actions = [], [], []
+        for item in r.iter():
+            tag = item.tag.split("}")[-1]
+            if tag == "field" and item.text:
+                fields.append(item.text.strip())
+            elif tag in ("customButtons", "quickActionName") and item.text:
+                actions.append(item.text.strip())
+        # required fields: layoutItems whose behavior is Required
+        for li in r.iter():
+            if li.tag.split("}")[-1] != "layoutItems":
+                continue
+            beh = fld = ""
+            for ch in li:
+                name = ch.tag.split("}")[-1]
+                if name == "behavior":
+                    beh = (ch.text or "").strip()
+                elif name == "field":
+                    fld = (ch.text or "").strip()
+            if beh == "Required" and fld:
+                required.append(fld)
+        # Account-Account Layout.layout-meta.xml -> object is the part before "-"
+        stem = p.name.replace(".layout-meta.xml", "")
+        obj = stem.split("-", 1)[0]
+        out.append(LayoutMeta(api_name=stem, object_name=obj,
+                              fields=tuple(dict.fromkeys(fields)),
+                              required_fields=tuple(dict.fromkeys(required)),
+                              actions=tuple(dict.fromkeys(actions)), path=str(p)))
+    return out
+
+
+def parse_approval_processes(root: Path) -> list:
+    out = []
+    for p in root.rglob("*.approvalProcess-meta.xml"):
+        try:
+            r = ET.parse(p).getroot()
+        except (ET.ParseError, OSError):
+            continue
+        steps = []
+        for st in r.findall("sf:approvalStep", NS):
+            approvers = []
+            atype = ""
+            for ap in st.iter():
+                name = ap.tag.split("}")[-1]
+                if name == "type" and ap.text:
+                    atype = ap.text.strip()
+                elif name == "approver" and ap.text:
+                    approvers.append(ap.text.strip())
+            steps.append(ApprovalStep(label=_text(st, "label"), approver_type=atype,
+                                      approvers=tuple(approvers)))
+        stem = p.name.replace(".approvalProcess-meta.xml", "")
+        out.append(ApprovalProcessMeta(
+            api_name=stem, object_name=stem.split(".", 1)[0],
+            label=_text(r, "label"),
+            active=_text(r, "active").lower() != "false",
+            entry_criteria=_text(r, "entryCriteriaBooleanFilter"),
+            steps=tuple(steps), path=str(p)))
+    return out
+
+
+def parse_validation_rules(root: Path) -> list:
+    out = []
+    for p in root.rglob("*.validationRule-meta.xml"):
+        try:
+            r = ET.parse(p).getroot()
+        except (ET.ParseError, OSError):
+            continue
+        obj = "Unknown"
+        parts = p.parts
+        if "objects" in parts:
+            i = parts.index("objects")
+            if i + 1 < len(parts):
+                obj = parts[i + 1]
+        out.append(ValidationRuleMeta(
+            api_name=p.name.replace(".validationRule-meta.xml", ""),
+            object_name=obj,
+            active=_text(r, "active").lower() != "false",
+            error_message=_text(r, "errorMessage"),
+            formula=_text(r, "errorConditionFormula"), path=str(p)))
+    return out
+
+
+def parse_profiles(root: Path) -> list:
+    out = []
+    for p in root.rglob("*.profile-meta.xml"):
+        try:
+            r = ET.parse(p).getroot()
+        except (ET.ParseError, OSError):
+            continue
+        perms = [_text(up, "name") for up in r.findall("sf:userPermissions", NS)
+                 if _text(up, "enabled").lower() == "true"]
+        objs = []
+        for op in r.findall("sf:objectPermissions", NS):
+            objs.append(ObjectPerm(
+                object_name=_text(op, "object"),
+                allow_edit=_text(op, "allowEdit").lower() == "true",
+                allow_delete=_text(op, "allowDelete").lower() == "true",
+                modify_all=_text(op, "modifyAllRecords").lower() == "true",
+                view_all=_text(op, "viewAllRecords").lower() == "true"))
+        layouts = tuple(_text(la, "layout") for la in r.findall("sf:layoutAssignments", NS)
+                        if _text(la, "layout"))
+        flows = tuple(_text(fa, "flow") for fa in r.findall("sf:flowAccesses", NS)
+                      if _text(fa, "enabled").lower() == "true")
+        out.append(ProfileMeta(
+            api_name=p.name.replace(".profile-meta.xml", ""),
+            label=_text(r, "label") or p.name.replace(".profile-meta.xml", ""),
+            user_permissions=perms, object_perms=objs,
+            layout_assignments=tuple(dict.fromkeys(layouts)),
+            flow_access=flows, path=str(p)))
+    return out
+
+
 def parse_project(root: Path) -> OrgMetadata:
     """Parse everything D3/D4/D5 need out of an SFDX directory."""
     return OrgMetadata(
@@ -781,6 +983,10 @@ def parse_project(root: Path) -> OrgMetadata:
         permission_sets=parse_permission_sets(root),
         record_stats=[],          # source mode has no record data
         report_refs=parse_reports(root),
+        layouts=parse_layouts(root),
+        profiles=parse_profiles(root),
+        approval_processes=parse_approval_processes(root),
+        validation_rules=parse_validation_rules(root),
     )
 
 
