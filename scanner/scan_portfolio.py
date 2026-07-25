@@ -653,12 +653,19 @@ def build_portfolio():
                 pct = scanner.code_identifiers(pm)
                 pfind = scanner.all_d1_findings(pf, pm.report_refs, pct)
                 pfind.extend(rules_ext.all_findings(pm))
+                # Every rule the current scan runs, or the history is not
+                # comparable with it: a past scan missing the persona pack scores
+                # better than today for a reason that is not remediation, and the
+                # burn-down reads as the org getting worse.
+                ppersonas = persona_mod.build_personas(pm)
+                pfind.extend(persona_mod.persona_findings(ppersonas))
+                pblast = persona_mod.blast_index(pm, ppersonas)
                 pfind, _ = pm.drop_blocked(pfind)
                 scans.append(scan_result.build(
                     pf, pfind, name, scan_mode=m,
                     assessed_dims=frozenset({"D1"} | pm.assessable_dims()),
                     report_refs=pm.report_refs, code_tokens=pct,
-                    coverage=pm.coverage(), now=past, org_type=org_type,
+                    coverage=pm.coverage(), now=past, org_type=org_type, blast=pblast,
                     org_overrides={"last_refreshed": refreshed, "notes": notes}))
         # Drift is an estate-level question: it needs every org in the estate,
         # so it runs once they all exist rather than per org as they are built.
