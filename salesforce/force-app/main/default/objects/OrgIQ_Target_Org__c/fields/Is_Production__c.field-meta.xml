@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Production__c</fullName>
+    <description>True for the org of record. Findings here are live risk rather than pre-release risk.</description>
+    <inlineHelpText>True for the org of record. Findings here are live risk rather than pre-release risk.</inlineHelpText>
+    <label>Is Production</label>
+    <defaultValue>false</defaultValue>
+    <type>Checkbox</type>
+</CustomField>

@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 
 SCAN, FINDING, DIM = "OrgIQ_Scan__c", "OrgIQ_Finding__c", "OrgIQ_Dimension_Score__c"
+TARGET_ORG = "OrgIQ_Target_Org__c"
 
 
 def sf(args, capture=True):
@@ -80,8 +81,37 @@ def main():
         sf(["data", "delete", "bulk", "--sobject", SCAN, "--file", str(tmp / "del.csv"),
             "--target-org", org, "--wait", a.wait])
 
+    # 1b) upsert the orgs the scans belong to ------------------------------
+    # Upserted, not wiped: an org outlives any one scan of it, and its type,
+    # refresh date and notes are the context every scan is read against.
+    orgs = {}
+    for s in scans:
+        o = s.get("org")
+        if o:
+            orgs[o["external_org_id"]] = o
+    org_id_by_ext = {}
+    if orgs:
+        org_cols = ["External_Org_Id__c", "Name", "Org_Type__c", "Is_Production__c",
+                    "Instance_Url__c", "Last_Refreshed__c", "Notes__c"]
+        write_csv(tmp / "orgs.csv", org_cols, [{
+            "External_Org_Id__c": o["external_org_id"],
+            "Name": o["name"][:80],
+            "Org_Type__c": o["org_type"],
+            "Is_Production__c": b(o["is_production"]),
+            "Instance_Url__c": o.get("instance_url") or "",
+            "Last_Refreshed__c": o.get("last_refreshed") or "",
+            "Notes__c": o.get("notes") or "",
+        } for o in orgs.values()])
+        print(f"→ upserting {len(orgs)} target org(s)…")
+        sf(["data", "upsert", "bulk", "--sobject", TARGET_ORG, "--file", str(tmp / "orgs.csv"),
+            "--external-id", "External_Org_Id__c", "--target-org", org, "--wait", a.wait])
+        for r in sf(["data", "query", "--query",
+                     f"SELECT Id, External_Org_Id__c FROM {TARGET_ORG}",
+                     "--target-org", org])["records"]:
+            org_id_by_ext[r["External_Org_Id__c"]] = r["Id"]
+
     # 2) insert scans ------------------------------------------------------
-    scan_cols = ["External_Scan_Id__c", "Target_Org__c", "Scan_Mode__c",
+    scan_cols = ["External_Scan_Id__c", "Target_Org__c", "Target_Org_Ref__c", "Scan_Mode__c",
                  "Rubric_Version__c", "Composite_Score__c", "Readiness_Band__c",
                  "Components_Scanned__c", "Semantic_Density__c",
                  "Est_Grounding_Tokens__c", "Est_Remediated_Tokens__c", "Removable_Restating__c",
@@ -90,6 +120,7 @@ def main():
     write_csv(tmp / "scans.csv", scan_cols, [{
         "External_Scan_Id__c": s["scan"]["external_scan_id"],
         "Target_Org__c": s["scan"]["target_org"],
+        "Target_Org_Ref__c": org_id_by_ext.get(s["scan"].get("target_org_external_id"), ""),
         "Scan_Mode__c": s["scan"]["scan_mode"],
         "Rubric_Version__c": s["scan"]["rubric_version"],
         "Composite_Score__c": s["scan"]["composite_score"],

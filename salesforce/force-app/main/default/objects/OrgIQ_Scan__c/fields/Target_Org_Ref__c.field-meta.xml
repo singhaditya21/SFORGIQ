@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Target_Org_Ref__c</fullName>
+    <description>The org this scan assessed. A lookup rather than a master-detail so a scan survives its org record being reorganised, and so existing scans that predate the org model stay loadable; Target_Org__c keeps the display name either way.</description>
+    <inlineHelpText>The org this scan assessed.</inlineHelpText>
+    <label>Target Org</label>
+    <referenceTo>OrgIQ_Target_Org__c</referenceTo>
+    <relationshipLabel>Scans</relationshipLabel>
+    <relationshipName>Scans</relationshipName>
+    <required>false</required>
+    <type>Lookup</type>
+    <deleteConstraint>SetNull</deleteConstraint>
+</CustomField>

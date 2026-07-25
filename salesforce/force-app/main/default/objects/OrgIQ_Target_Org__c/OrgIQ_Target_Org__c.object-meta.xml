@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>One Salesforce org in the enterprise's estate — a sandbox or production. Scans hang off it, so a backlog belongs to an org rather than to a free-text name, and the same org can be compared with its siblings over time.</description>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <enableActivities>false</enableActivities>
+    <enableHistory>false</enableHistory>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <label>OrgIQ Target Org</label>
+    <pluralLabel>OrgIQ Target Orgs</pluralLabel>
+    <nameField>
+        <label>Org Name</label>
+        <type>Text</type>
+    </nameField>
+    <sharingModel>ReadWrite</sharingModel>
+</CustomObject>

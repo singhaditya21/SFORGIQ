@@ -30,6 +30,15 @@
         <viewAllRecords>true</viewAllRecords>
         <modifyAllRecords>true</modifyAllRecords>
     </objectPermissions>
+    <objectPermissions>
+        <object>OrgIQ_Target_Org__c</object>
+        <allowRead>true</allowRead>
+        <allowCreate>true</allowCreate>
+        <allowEdit>true</allowEdit>
+        <allowDelete>true</allowDelete>
+        <viewAllRecords>true</viewAllRecords>
+        <modifyAllRecords>true</modifyAllRecords>
+    </objectPermissions>
     <fieldPermissions>
         <field>OrgIQ_Scan__c.Components_Scanned__c</field>
         <readable>true</readable>
@@ -222,6 +231,36 @@
     </fieldPermissions>
     <fieldPermissions>
         <field>OrgIQ_Scan__c.Removable_Unreferenced__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Target_Org__c.Org_Type__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Target_Org__c.Instance_Url__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Target_Org__c.Last_Refreshed__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Target_Org__c.Is_Production__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Target_Org__c.Notes__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Scan__c.Target_Org_Ref__c</field>
         <readable>true</readable>
         <editable>true</editable>
     </fieldPermissions>

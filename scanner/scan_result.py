@@ -246,14 +246,58 @@ def _composite(dim_rows, findings) -> tuple:
     return composite, gate_applied, "; ".join(reasons) if gate_applied else ""
 
 
-def _scan_external_id(source: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", source.lower()).strip("-")[:24]
-    return "SCAN-" + (slug or "scan") + "-0001"
+def _org_slug(source: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", source.lower()).strip("-")[:24] or "org"
+
+
+def _org_external_id(source: str) -> str:
+    return "ORG-" + _org_slug(source)
+
+
+def _scan_external_id(source: str, now: datetime) -> str:
+    """One scan per org per day.
+
+    It used to be a hardcoded `-0001`, so every re-scan overwrote the last one
+    and an org could never have a history — which makes a burn-down impossible
+    to show. Dating it keeps re-running the same scan idempotent (the common
+    case, and what the finding lifecycle relies on) while letting tomorrow's run
+    stand as its own record next to today's.
+    """
+    return "SCAN-" + _org_slug(source) + "-" + now.strftime("%Y%m%d")
+
+
+# Sandboxes are conventionally named after where they sit; when a caller does
+# not tell us the type, the name is the only evidence available. Ordered, because
+# "uat-dev" should read as a developer sandbox, not as UAT.
+_TYPE_HINTS = [
+    ("Production", ("prod", "production", "org of record")),
+    ("Developer", ("dev", "developer", "scratch")),
+    ("QA", ("qa", "test", "sit")),
+    ("UAT", ("uat", "acceptance")),
+    ("Staging", ("stage", "staging", "preprod", "pre-prod", "hotfix")),
+    ("Training", ("train", "training", "demo", "sandbox-demo")),
+]
+
+
+def infer_org_type(name: str) -> str:
+    """Best guess at an org's place in the promotion path from its name.
+
+    A guess, and treated as one: the collector or the caller should override it
+    wherever the real type is known. Defaults to Other rather than Production,
+    because mislabelling a sandbox as the org of record would inflate the
+    severity of everything found in it.
+    """
+    low = (name or "").lower()
+    for org_type, hints in _TYPE_HINTS:
+        if any(h in low for h in hints):
+            return org_type
+    return "Other"
 
 
 def build(fields, findings, source: str, scan_mode: str = "Source",
           assessed_dims=frozenset({"D1"}), now: datetime | None = None,
-          report_refs=None, code_tokens=frozenset(), coverage=None) -> dict:
+          report_refs=None, code_tokens=frozenset(), coverage=None,
+          org_type: str = "", org_overrides: dict = None) -> dict:
     """`report_refs` / `code_tokens` are the same reference evidence the D1 rules
     run on. They are optional and trail the older arguments so existing callers
     keep working, but a caller that has them should pass them: without them the
@@ -275,9 +319,25 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
     # the token keys stay explicitly prefixed `est_`.
     payload = density.grounding_payload(fields, report_refs, code_tokens)
 
+    # The org this scan is *of*. A scan used to carry only a free-text name, so
+    # "the backlog for this org" was a string match and an org had no type, no
+    # refresh date and no history. Callers that know better pass `org_type` and
+    # `org` overrides; otherwise the name is all the evidence there is.
+    org = {
+        "external_org_id": _org_external_id(source),
+        "name": source,
+        "org_type": org_type or infer_org_type(source),
+        "instance_url": "",
+        "last_refreshed": None,
+        "notes": "",
+    }
+    org.update(org_overrides or {})
+    org["is_production"] = org["org_type"] == "Production"
+
     scan = {
-        "external_scan_id": _scan_external_id(source),
+        "external_scan_id": _scan_external_id(source, now),
         "target_org": source,
+        "target_org_external_id": org["external_org_id"],   # links the scan to its org
         "scan_mode": scan_mode,
         "rubric_version": RUBRIC_VERSION,
         "composite_score": composite,
@@ -323,7 +383,8 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
             "status": "Open",
         })
 
-    return {"scan": scan, "dimensions": dim_rows, "findings": finding_rows}
+    return {"org": org, "scan": scan,
+            "dimensions": dim_rows, "findings": finding_rows}
 
 
 def write_json(result: dict, path: str):
