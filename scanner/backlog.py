@@ -68,6 +68,18 @@ def emits_to_backlog(finding) -> bool:
             and _CONF_RANK.get(finding.confidence, 0) >= _GATE_CONF)
 
 
+# Dimension code -> its name. The ticket header used to say "Grounding Quality"
+# for every dimension, which was true when only D1 existed and has been wrong
+# since D2–D5 landed; an ingested Code Analyzer violation filed under "Grounding
+# Quality" would be actively misleading about what the finding is.
+_DIM_NAME = {
+    "D1": "Grounding Quality",
+    "D2": "Data Foundation",
+    "D3": "Action Surface",
+    "D4": "Permission Blast Radius",
+    "D5": "Automation Collision",
+}
+
 # severity -> Jira priority
 _PRIORITY = {
     "Critical": "Highest",
@@ -307,6 +319,91 @@ _PLAYBOOK = {
                        "3. Add a test that writes the record the way an agent would.",
         "acceptance": "One deterministic automation path per object; re-scan clears it.",
     },
+
+    # --- ingested from Salesforce's free tools (scanner/external.py) ---
+    #
+    # Two things differ from the native entries above, and both are honesty
+    # requirements rather than style:
+    #
+    #   * Acceptance says re-run THE TOOL THAT RAISED IT. An OrgIQ re-scan
+    #     cannot clear a Code Analyzer violation — OrgIQ has no Apex parser —
+    #     so "re-scan clears the finding" would be an acceptance criterion
+    #     nobody can actually satisfy.
+    #   * Where an ingested finding shares an epic with a native rule
+    #     (bulkification, Apex tests, unreferenced fields) it KEEPS that epic
+    #     name, so one fix is one epic no matter which engine found it.
+
+    "D5.EXT_BULK_SAFETY": {
+        "epic": "Bulkify automation", "points": 5,
+        "remediation": "1. Open the flagged file at the reported line and confirm the "
+                       "violation — Code Analyzer parses Apex, so treat it as a finding, "
+                       "not a hint.\n"
+                       "2. Hoist the query or DML out of the loop and act on collections; "
+                       "where the caller is agent-invoked, check the whole call path, not "
+                       "just this method.\n"
+                       "3. Add a bulk test (200+ records) that fails before the fix.",
+        "acceptance": "Re-running Code Analyzer over the same workspace reports no "
+                      "bulk-safety violation for this file, and a 200-record test passes.",
+    },
+    "D4.EXT_SECURITY_VIOLATION": {
+        "epic": "Close code-level security violations", "points": 5,
+        "remediation": "1. Read the rule's documentation link on the finding; CRUD/FLS, "
+                       "sharing and injection rules each have a specific safe form.\n"
+                       "2. Apply it — enforce sharing, check accessibility before the "
+                       "query or DML, bind variables instead of concatenating SOQL.\n"
+                       "3. Re-run Code Analyzer with the same rule selector to confirm "
+                       "the path is clear, including any Graph Engine path rules.",
+        "acceptance": "Re-running Code Analyzer reports no security violation for this "
+                      "file. Note this is Code Analyzer's verdict, not OrgIQ's: OrgIQ "
+                      "does not analyse Apex data flow and cannot confirm the fix.",
+    },
+    "D3.EXT_TEST_QUALITY": {
+        "epic": "Cover agent-invoked Apex with tests", "points": 3,
+        "remediation": "1. Add assertions that check outcomes — a test that runs code "
+                       "without asserting anything proves only that it did not throw.\n"
+                       "2. Remove SeeAllData=true and build the data the test needs.\n"
+                       "3. Exercise the bulk and error paths an agent will hit.",
+        "acceptance": "Re-running Code Analyzer reports no test-quality violation for "
+                      "this class, and the tests assert on outcomes rather than coverage.",
+    },
+    "D4.HEALTH_CHECK_RISK": {
+        "epic": "Raise the org to the Health Check baseline", "points": 2,
+        "remediation": "1. Open Setup > Security > Health Check and find the setting "
+                       "named on this finding; the page fixes most settings in place.\n"
+                       "2. Confirm the change is safe for existing integrations and "
+                       "logins before applying it — several of these settings can lock "
+                       "out a working integration.\n"
+                       "3. Apply it, or record a documented exception with an owner if "
+                       "the org deliberately runs below the baseline.",
+        "acceptance": "Health Check no longer lists this setting as a risk, or the "
+                      "deviation is recorded as an accepted exception with an owner. "
+                      "This is org security posture, not agent blast radius: it is "
+                      "reported and ticketed but does not move the D4 score.",
+    },
+    "D1.OPTIMIZER_UNUSED_FIELD": {
+        "epic": "Retire unreferenced fields", "points": 3,
+        "remediation": "1. Confirm against Optimizer's own report which records and "
+                       "components it checked — it sees the whole org, including layouts "
+                       "and dependencies OrgIQ cannot read from source.\n"
+                       "2. Deprecate before deleting: remove the field from page layouts "
+                       "and permission sets and let a full business cycle pass.\n"
+                       "3. Delete it, or keep it and describe what it is for so it stops "
+                       "competing with live fields for retrieval.",
+        "acceptance": "Field is deleted, or retained with a documented reason and hidden "
+                      "from the agent's layouts and permissions. A re-run of Optimizer no "
+                      "longer lists it as unused.",
+    },
+    "D4.OPTIMIZER_PERMISSION_RISK": {
+        "epic": "Reduce profile and permission-set sprawl", "points": 5,
+        "remediation": "1. Review the profile or permission set Optimizer flagged and "
+                       "list who actually holds it.\n"
+                       "2. Consolidate overlapping grants and remove the ones no live "
+                       "user or integration needs.\n"
+                       "3. Re-test the agent's own permission set against the tightened "
+                       "model.",
+        "acceptance": "A re-run of Optimizer no longer flags this profile or permission "
+                      "set, and the agent's own access is unchanged or narrower.",
+    },
 }
 
 
@@ -317,6 +414,13 @@ def _play(rule_id: str) -> dict:
 # ---------------------------------------------------------- row shaping
 
 def _component_type(finding) -> str:
+    # Ingested findings know exactly what they are about — an Apex class, a
+    # security setting — and say so on the finding. Read that first; the
+    # heuristic below cannot tell an Apex class from a field and would label a
+    # Code Analyzer violation "CustomField".
+    explicit = getattr(finding, "component_type", "")
+    if explicit:
+        return explicit
     # Aggregate findings look like "Object [N fields]"; field findings like
     # "Object.Field__c". Everything the D1 spike emits is about custom fields.
     return "CustomField group" if "[" in finding.component else "CustomField"
@@ -456,6 +560,13 @@ def _epic_description(epic: str, children, source: str) -> str:
     means for its children."""
     n = len(children)
     rules = _distinct(f.rule_id for f in children)
+    engines = _distinct(_finding_source(f) for f in children)
+    # What actually verifies this epic. An OrgIQ re-scan cannot clear a Code
+    # Analyzer violation or a Health Check risk — OrgIQ has no Apex parser and
+    # does not evaluate org security settings — so an epic full of ingested
+    # findings has to name the engine that can confirm the fix.
+    closes = ("a re-scan" if engines == [FINDING_SOURCE]
+              else "a re-run of " + " and ".join(engines))
     lines = [
         f"Epic: {epic} ({children[0].dimension})",
         f"Severity: {_epic_severity(children)}   "
@@ -469,7 +580,7 @@ def _epic_description(epic: str, children, source: str) -> str:
         "These findings share one fix, so they are imported as one epic rather "
         "than as loose tickets (PRD §4.6). Each child below carries its own "
         "component, evidence and remediation steps; the epic closes when every "
-        "child clears a re-scan.",
+        f"child clears {closes}.",
         "",
         "Acceptance criteria (shared by the children):",
     ]
@@ -487,7 +598,7 @@ def _epic_description(epic: str, children, source: str) -> str:
 def _description(finding, source: str) -> str:
     play = _play(finding.rule_id)
     lines = [
-        f"Rule: {finding.rule_id} ({finding.dimension} — Grounding Quality)",
+        f"Rule: {finding.rule_id} ({finding.dimension} — {_DIM_NAME.get(finding.dimension, 'OrgIQ')})",
         f"Severity: {finding.severity}   Confidence: {finding.confidence}",
         f"Component: {finding.component}  [{_component_type(finding)}]",
         "",
@@ -507,8 +618,23 @@ def _description(finding, source: str) -> str:
         # raised the finding. Label both so the ticket is not ambiguous.
         f"Scan source: {source}",
         f"Finding source: {_finding_source(finding)}",
-        f"Effort points are PROVISIONAL (uncalibrated, PRD §8/§11).",
     ]
+    # Ingested findings: name the tool's own rule and its documentation, so a
+    # triager can go back to the engine that made the claim, and record any
+    # corroborating engine, so the merge that removed a second ticket is
+    # visible on the one that survived rather than silently applied.
+    tool_rule = getattr(finding, "tool_rule", "")
+    if tool_rule:
+        lines.append(f"Tool rule: {tool_rule}")
+    reference = getattr(finding, "reference", "")
+    if reference:
+        lines.append(f"Reference: {reference}")
+    corroborated = getattr(finding, "corroborated_by", None)
+    if corroborated:
+        lines.append(f"Corroborated by: {', '.join(corroborated)} — the same defect "
+                     f"reported independently; merged into this one item so it is "
+                     f"not worked, or counted, twice.")
+    lines.append("Effort points are PROVISIONAL (uncalibrated, PRD §8/§11).")
     return "\n".join(lines)
 
 

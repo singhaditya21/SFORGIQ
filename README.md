@@ -42,7 +42,7 @@ console entry point. Invoke the module directly, as above.
 | Salesforce objects (`salesforce/`) | 3 objects, **38 fields** in source + `OrgIQ_Admin` permission set, Connected App, CORS origin, `Security.settings`. **32 fields were deployed to `orgiq` and confirmed**; the 6 added since (Epic, Acceptance Criteria, Source, Semantic Density, Est. Grounding/Remediated Tokens) have not been redeployed |
 | Salesforce data | **Loaded & confirmed**, but the portfolio is **synthetic** — 24 scans, 120 dimension scores, 1,976 findings across D1–D5 (~4 of the DE org's 5 MB) |
 | Backlog CSV output | Working. Threshold-gated Jira CSV, remediation + provisional effort points |
-| Dashboard (`dashboard/`) | **Live on GitHub Pages in demo mode.** Portfolio overview + per-org drill-down (radar, trend, backlog). OAuth live mode is written end to end but **has not been observed to complete** — see [Traps](#traps-that-will-bite-a-fresh-clone) |
+| Dashboard (`dashboard/`) | **Live on GitHub Pages in demo mode.** Portfolio overview + per-org drill-down (radar, trend, backlog). OAuth live mode is written end to end but **has not been observed to complete** — see [Traps](#traps-that-will-bite-a-fresh-clone). Live mode needs a login in the OrgIQ org **and** the `OrgIQ_Admin` permission set; short of either, the dashboard now says which one is missing instead of quietly reverting to demo data — see [Giving someone else access to live mode](#giving-someone-else-access-to-live-mode) |
 
 **Environment done:** Salesforce CLI installed (macOS arm64), Developer Edition org
 created, `sf org login web --alias orgiq` complete.
@@ -216,6 +216,65 @@ scripts with it. Demo mode survives, because it reads a committed JSON file.
 
 ---
 
+## Giving someone else access to live mode
+
+**Live mode is for people who have a login in the OrgIQ org. Everyone else sees demo
+data, and that is by design** — the public dashboard reads a bundled JSON that needs no
+auth, so the link works for anyone who opens it. "Connect Salesforce" is a door into one
+Developer Edition org that holds the real scan records, and a door needs a key.
+
+**Signing in is not the key on its own.** The three OrgIQ objects are reachable only
+through the **`OrgIQ_Admin`** permission set. Without it a colleague completes the OAuth
+flow, gets a valid token, runs a query Salesforce refuses, and lands back on demo data —
+which is why "connect to Salesforce doesn't work" outlived the CORS fix above. It was a
+second, unrelated wall wearing the same face. The dashboard now names which wall it hit;
+this section is how to remove it.
+
+**1. Create the user.** Setup → Users → Users → New User, on a licence with API access
+(Salesforce, or Salesforce Platform). Salesforce usernames are globally unique across
+*every* org and look like an email without being one — if `name@company.com` is taken,
+use something like `name@company.com.orgiq`. Salesforce emails them an activation link
+and they set their own password; nobody else handles it.
+
+**2. Grant access.** One command, run by whoever owns the org:
+
+```
+bash scripts/grant-orgiq-access.sh name@company.com.orgiq        # org alias "orgiq"
+bash scripts/grant-orgiq-access.sh name@company.com.orgiq myalias
+```
+
+It assigns `OrgIQ_Admin`, then verifies the assignment by querying it back — an
+assignment that did not land is never reported as access granted. It **does not create
+users**, on purpose: that needs a real name, email, profile and licence, which is the
+owner's call and not a script's, so an unknown username stops it with instructions
+rather than a guess.
+
+**3. They connect.** Open the dashboard, hard-refresh (Cmd/Ctrl + Shift + R), click
+**Connect Salesforce**, sign in. If they had already connected and were staring at demo
+data, **Re-check live access** in the header picks the new grant up without a second trip
+through OAuth.
+
+### When it still shows demo data
+
+Falling back to demo data is deliberate — the public site must never break — but it is
+never silent. The banner names which case it is, and they need different fixes:
+
+| The banner says | What actually happened | What fixes it |
+|---|---|---|
+| `OrgIQ_Scan__c is not visible to your Salesforce user` | Authenticated; the org refuses this user the objects | Step 2. (Salesforce reports "not visible to you" and "not deployed here" identically, so this is also what a *fresh* org with no OrgIQ metadata looks like) |
+| `This org holds N scans, but none of them are visible` | Object access is fine, record-level sharing is not | Step 2 — `OrgIQ_Admin` grants View All on the objects |
+| `this OrgIQ org simply has no scans loaded` | Permissions are fine; the org is empty | `python3 salesforce/load_portfolio.py` — not a permissions problem |
+| `no scans came back` … `the org would not tell us which` | Empty result, and the org would not say whether records exist | Try step 2 first; if the user already holds `OrgIQ_Admin`, the org is genuinely empty |
+| `Could not reach the OrgIQ org` | No answer at all — offline, or the origin is not on the CORS allowlist | [Traps](#traps-that-will-bite-a-fresh-clone) |
+| `The org rejected the access token` | The Salesforce session timed out | Connect again; nothing to do with permissions |
+
+The banner also prints the signed-in username — which is exactly the value step 2 needs,
+and worth checking when someone has more than one Salesforce login and used the wrong
+one. Between the header pill (`Demo · N orgs` / `● Live · N orgs`) and the footer, it is
+always stated on screen which of the two you are looking at.
+
+---
+
 ## Decisions made, and why
 
 Recorded so they don't get re-litigated.
@@ -307,7 +366,7 @@ Neither resembles a fifteen-year-old enterprise org.
 2. ~~**Backlog CSV emitter**~~ — **done.** `scanner/backlog.py`; run with `--backlog out.csv` (see below).
 3. ~~**Shareable report**~~ — **done, as a React dashboard** (superseded the flat HTML report). Lives in `dashboard/`, deployed to GitHub Pages.
 4. ~~**Dashboard demo mode**~~ — **done.** `dashboard/public/portfolio.json` is exported from the org by `dashboard/export_portfolio.py`; the public site reads it, no auth. This is the only path the live dashboard has ever exercised.
-5. **OAuth live mode** — **code complete, never verified end to end.** A PKCE public-client Connected App, a CORS origin and the `enableOauthCorsPolicy` security setting are in `salesforce/force-app`. The dashboard's "Connect Salesforce" button runs the browser PKCE flow and, on success, queries `OrgIQ_Scan__c` / `OrgIQ_Dimension_Score__c` / `OrgIQ_Finding__c` over the REST API and renders the org's own data in place of the bundled JSON. That path has not been observed to succeed: the org had OAuth-endpoint CORS disabled, so the token exchange was refused in the browser, and the setting that fixes it was committed afterwards and has not been deployed and retested. Treat this as *intended behaviour with a setup requirement*, not as a working feature. Sign-in is the org owner's interactive action and only works from the registered callback origin.
+5. **OAuth live mode** — **code complete, never verified end to end.** A PKCE public-client Connected App, a CORS origin and the `enableOauthCorsPolicy` security setting are in `salesforce/force-app`. The dashboard's "Connect Salesforce" button runs the browser PKCE flow and, on success, queries `OrgIQ_Scan__c` / `OrgIQ_Dimension_Score__c` / `OrgIQ_Finding__c` over the REST API and renders the org's own data in place of the bundled JSON. That path has not been observed to succeed: the org had OAuth-endpoint CORS disabled, so the token exchange was refused in the browser, and the setting that fixes it was committed afterwards and has not been deployed and retested. Treat this as *intended behaviour with a setup requirement*, not as a working feature. Sign-in only works from the registered callback origin. Sign-in is also not sufficient: the OrgIQ objects are gated by the `OrgIQ_Admin` permission set, which was assigned to exactly one user, so a second person could authenticate successfully and still see nothing. That is now a stated reason on screen rather than a silent fall back to demo data, and `scripts/grant-orgiq-access.sh` grants the permission set — see [Giving someone else access to live mode](#giving-someone-else-access-to-live-mode).
 
 The source-mode slice is live: portfolio → Salesforce → backlog CSV + dashboard in demo mode, across all five dimensions on synthetic inputs. Remaining: **an actual org connection** (nothing in `scanner/` has one), real non-synthetic D2–D5 assessment, a verified live-mode round trip, effort calibration, and the public-corpus validation from the PRD roadmap.
 
@@ -343,8 +402,14 @@ SFORGIQ/
   dashboard/             React portfolio dashboard; deployed to GitHub Pages
     src/views/           PortfolioView (overview) + OrgDetail (drill-down)
     src/lib/sfConfig.js  hardcoded OAuth client id — see Traps before redeploying
+    src/lib/live.js      OAuth PKCE + the live REST read, and the classification
+                         of every way it can fail (see Giving someone else access)
     export_portfolio.py  exports every scan from the org into public/portfolio.json
     export_demo_data.py  exports a single scan (legacy, single-scan view)
+  scripts/
+    setup-keepalive.sh   one-time: store SFDX_AUTH_URL so keepalive can log in
+    grant-orgiq-access.sh  assign OrgIQ_Admin to a colleague, so live mode works
+                         for someone other than the org owner
   .github/workflows/     CI (tests + fixture smoke + dashboard build),
                          GitHub Pages deploy, org keepalive
 ```

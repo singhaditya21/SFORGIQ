@@ -1,8 +1,12 @@
-"""Backlog gating / idempotency (PRD §4.6) and the scan-result scoring model."""
+"""Backlog gating / idempotency (PRD §4.6), the scan-result scoring model, and
+the coverage semantics that decide what a scan is allowed to score at all."""
 
 import csv
 
+import pytest
+
 import backlog
+import metadata as md
 import scan_result
 from conftest import field
 from orgiq_spike import Finding
@@ -273,6 +277,219 @@ def test_unassessed_dimensions_are_excluded_from_the_composite():
         assert rows[code]["score"] is None
         assert rows[code]["assessment_status"] == "Not Assessed"
         assert rows[code]["missing_signals"]          # says *why*
+
+
+# ------------------------------------------------------- rule coverage
+#
+# Coverage used to be the literal 100.0 written into every assessed row. These
+# cover the three things that had to become true for PRD §7.2.4 to mean
+# anything: the number is computed, it names what was missing, and a dimension
+# under the threshold is kept out of the composite instead of being scored on
+# evidence nobody collected.
+
+def _meta(**kw) -> md.OrgMetadata:
+    """OrgMetadata with D1's field count set — metadata.py cannot see Field, so
+    an unset count reads as 'no schema was read' and takes D1 out entirely."""
+    fields = kw.pop("field_count", 1)
+    m = md.OrgMetadata(**kw)
+    m.field_count = fields
+    return m
+
+
+def _rows(res) -> dict:
+    return {d["dimension"][:2]: d for d in res["dimensions"]}
+
+
+def _described_field():
+    return field("A__c", description="Documented well enough to ground on.")
+
+
+def test_rule_coverage_is_a_computed_fraction_not_a_constant():
+    """D1 has six rules and one of them needs report references. With none
+    parsed, five ran: 83.3%, not 100."""
+    meta = _meta()
+    res = scan_result.build([_described_field()], [], "Src",
+                            assessed_dims=frozenset({"D1"}),
+                            coverage=meta.coverage())
+    d1 = _rows(res)["D1"]
+    assert d1["rule_coverage"] == 83.3
+    assert d1["assessment_status"] == "Assessed"      # 83.3% clears the 70% bar
+    assert d1["in_composite"] is True
+    # ...and it says which signal cost it the other sixth, rather than leaving a
+    # reader to infer that 83.3% means everything is fine.
+    assert md.SIGNAL_REPORT_REFERENCES in d1["missing_signals"]
+    assert "D1.UNREFERENCED_FIELD" in d1["missing_signals"]
+
+
+def test_full_evidence_earns_a_real_100_percent():
+    """The other side of the same claim: 100.0 has to be reachable, and reached
+    by arithmetic — otherwise the fraction is just a different constant."""
+    meta = _meta(report_refs=md.ReportRefs(report_count=3, refs={"Acct__c.A__c": 1}))
+    d1 = _rows(scan_result.build([_described_field()], [], "Src",
+                                 assessed_dims=frozenset({"D1"}),
+                                 coverage=meta.coverage()))["D1"]
+    assert (d1["rule_coverage"], d1["missing_signals"]) == (100.0, "")
+
+
+def test_a_dimension_under_the_threshold_is_partially_assessed_and_uncomposited():
+    """PRD §7.2.4. D2 has three rules; an org whose Name field is an auto-number
+    yields fill rate and staleness but no duplicate signal at all, so two of the
+    three ran — 66.7%, under the 70% bar."""
+    stats = md.RecordStats("Acct__c", fill_rate=0.2, stale_ratio=0.8,
+                           unavailable=("duplicate_rate",))
+    meta = _meta(record_stats=[stats])
+    assert "D2" in meta.assessable_dims()             # it *was* assessed, partly
+
+    low_fill = finding(rule="D2.LOW_FILL_RATE", dim="D2", sev="High",
+                       component="Acct__c")
+    res = scan_result.build([_described_field()], [low_fill], "Org",
+                            assessed_dims=frozenset({"D1", "D2"}),
+                            coverage=meta.coverage())
+    rows = _rows(res)
+    assert rows["D2"]["rule_coverage"] == 66.7
+    assert rows["D2"]["assessment_status"] == "Partially Assessed"
+    assert rows["D2"]["in_composite"] is False
+    # No score, deliberately: every D2–D5 score is 100 minus penalties, so a rule
+    # that could not run could not penalise and a partial assessment always reads
+    # high. Publishing that number would turn a missing signal into a good grade.
+    assert rows["D2"]["score"] is None
+    # The composite is D1 alone — the partial dimension contributed nothing.
+    assert res["scan"]["composite_score"] == rows["D1"]["score"]
+    # ...but the finding it did produce is still reported. Partial assessment
+    # suppresses the score, not the evidence.
+    assert [f["rule_id"] for f in res["findings"]] == ["D2.LOW_FILL_RATE"]
+
+
+def test_partial_assessment_names_the_signal_and_the_rules_it_blocked():
+    stats = md.RecordStats("Acct__c", unavailable=("duplicate_rate",))
+    meta = _meta(record_stats=[stats])
+    meta.record_signal(md.SIGNAL_DUPLICATES, md.UNAVAILABLE,
+                       "the Name field is an auto-number")
+    d2 = _rows(scan_result.build([_described_field()], [], "Org",
+                                 assessed_dims=frozenset({"D1", "D2"}),
+                                 coverage=meta.coverage()))["D2"]
+    assert md.SIGNAL_DUPLICATES in d2["missing_signals"]
+    assert "auto-number" in d2["missing_signals"]     # the collector's own reason
+    assert "D2.DUPLICATE_RECORDS" in d2["missing_signals"]
+    # OrgIQ_Dimension_Score__c.Missing_Signals__c is Text(255).
+    assert len(d2["missing_signals"]) <= scan_result.MISSING_SIGNALS_MAX
+
+
+def test_a_long_missing_signal_explanation_is_clipped_to_the_salesforce_field():
+    meta = _meta(record_stats=[md.RecordStats("Acct__c", unavailable=("duplicate_rate",))])
+    meta.record_signal(md.SIGNAL_DUPLICATES, md.UNAVAILABLE, "why " * 200)
+    d2 = _rows(scan_result.build([_described_field()], [], "Org",
+                                 assessed_dims=frozenset({"D1", "D2"}),
+                                 coverage=meta.coverage()))["D2"]
+    assert len(d2["missing_signals"]) == scan_result.MISSING_SIGNALS_MAX
+    assert d2["missing_signals"].endswith("...")
+
+
+def test_a_dimension_with_no_runnable_rule_is_not_assessed_at_all():
+    """Zero coverage is a different statement from partial coverage: nothing ran,
+    so there is no score and no partial credit."""
+    d3 = _rows(scan_result.build([_described_field()], [], "Src",
+                                 assessed_dims=frozenset({"D1"}),
+                                 coverage=_meta().coverage()))["D3"]
+    assert (d3["rule_coverage"], d3["score"]) == (0.0, None)
+    assert d3["assessment_status"] == "Not Assessed"
+    assert d3["in_composite"] is False
+
+
+def test_a_caller_that_supplies_no_coverage_keeps_the_old_behaviour():
+    """The map is optional and trails the older arguments. Without it the
+    caller's own assessed list is taken at face value, because it has told us
+    nothing about what it collected."""
+    res = scan_result.build([_described_field()], [], "Src",
+                            assessed_dims=frozenset({"D1", "D3"}))
+    rows = _rows(res)
+    assert rows["D1"]["rule_coverage"] == 100.0
+    assert rows["D3"]["assessment_status"] == "Assessed"
+
+
+def test_coverage_cannot_promote_a_dimension_the_caller_never_assessed():
+    """The registry decides how much of a dimension ran; it does not decide that
+    a dimension was looked at. A caller scanning D1 only stays scanning D1 only."""
+    meta = _meta(permission_sets=[md.PermissionSetMeta("Agent")])
+    d4 = _rows(scan_result.build([_described_field()], [], "Src",
+                                 assessed_dims=frozenset({"D1"}),
+                                 coverage=meta.coverage()))["D4"]
+    assert d4["assessment_status"] == "Not Assessed"
+    assert d4["in_composite"] is False
+
+
+# ------------------------------------------------------- the demo portfolio
+#
+# The corpus the dashboard is loaded from. Real coverage arithmetic runs over
+# it now, so these guard the two things that could quietly break: the bands it
+# has to span to be worth demoing, and the honesty properties it has to keep
+# while spanning them.
+
+@pytest.fixture(scope="module")
+def portfolio():
+    import scan_portfolio
+    scans, _ = scan_portfolio.build_portfolio()
+    return scans
+
+
+def _dims(scan, code):
+    return [d for d in scan["dimensions"] if d["dimension"].startswith(code)][0]
+
+
+def test_the_demo_portfolio_still_spans_every_readiness_band(portfolio):
+    assert {s["scan"]["readiness_band"] for s in portfolio} == {
+        "Not Ready", "Foundational Work Required", "Conditionally Ready", "Ready"}
+
+
+def test_the_demo_portfolio_shows_all_three_assessment_states(portfolio):
+    """Generated, never asserted: the states come out of the signal registry
+    reading evidence the generator did or did not produce."""
+    assert {d["assessment_status"] for s in portfolio for d in s["dimensions"]} == {
+        "Assessed", "Partially Assessed", "Not Assessed"}
+    coverages = {d["rule_coverage"] for s in portfolio for d in s["dimensions"]}
+    assert coverages != {100.0, 0.0}, "coverage is back to being a constant"
+
+
+def test_a_source_mode_org_never_claims_a_data_foundation_score(portfolio):
+    """No directory carries rows. An org scanned from source that reported a D2
+    score would be scoring evidence its own mode cannot produce."""
+    source_orgs = [s for s in portfolio if s["scan"]["scan_mode"] == "Source"]
+    assert source_orgs
+    for s in source_orgs:
+        d2 = _dims(s, "D2")
+        assert d2["assessment_status"] == "Not Assessed"
+        assert d2["score"] is None
+        assert md.SIGNAL_RECORD_STATS in d2["missing_signals"]
+
+
+def test_no_portfolio_dimension_publishes_a_score_it_did_not_fully_earn(portfolio):
+    for s in portfolio:
+        for d in s["dimensions"]:
+            if d["assessment_status"] == "Assessed":
+                assert d["score"] is not None
+                assert d["rule_coverage"] >= md.COVERAGE_THRESHOLD * 100
+            else:
+                assert d["score"] is None and d["in_composite"] is False
+
+
+def test_the_portfolio_composite_is_the_mean_of_its_composited_dimensions(portfolio):
+    """Excluding a partially assessed dimension has to actually exclude it."""
+    for s in portfolio:
+        scored = [d["score"] for d in s["dimensions"] if d["in_composite"]]
+        if s["scan"]["gate_applied"]:
+            continue                              # a cap replaced the mean
+        assert s["scan"]["composite_score"] == round(sum(scored) / len(scored))
+
+
+def test_the_remediation_time_series_still_burns_down(portfolio):
+    """Four quarters of one org remediating. A burn-down that ticks up mid-series
+    cannot be read, and the mode-aware signals changed what each quarter scores
+    on — so this is worth re-checking, not assuming."""
+    helios = sorted((s for s in portfolio if "Helios" in s["scan"]["target_org"]),
+                    key=lambda s: s["scan"]["target_org"])
+    scores = [s["scan"]["composite_score"] for s in helios]
+    assert len(scores) == 4
+    assert scores == sorted(scores), scores
 
 
 def test_composite_averages_only_assessed_dimensions():

@@ -103,11 +103,24 @@ class PermissionSetMeta:
 @dataclass
 class RecordStats:
     """Record-level signal for D2. Only org mode can supply this — a bare SFDX
-    directory carries no data."""
+    directory carries no data.
+
+    The three ratios default to the *benign* value, which is a trap: a default
+    fill_rate of 1.0 reads as "this object is perfectly populated" whether we
+    measured it or gave up. The trailing provenance fields exist so that never
+    goes unsaid — `unavailable` names the sub-signals that were not measured
+    and are therefore sitting at their benign default, and `sampled_fields`
+    says which fields the fill rate is a mean over. They are additive and
+    optional; the D2 rules ignore them, the org-mode report does not."""
     object_name: str
     fill_rate: float = 1.0        # 0..1, key fields populated
     stale_ratio: float = 0.0      # 0..1, not updated in 24 months
     duplicate_rate: float = 0.0   # 0..1
+    record_count: int = 0         # rows the ratios were computed over
+    sampled_fields: tuple = ()    # fields the fill rate averages
+    duplicate_key: str = ""       # field the duplicate probe grouped on
+    unavailable: tuple = ()       # sub-signals left at their benign default
+    notes: tuple = ()             # caveats worth printing next to the numbers
 
 
 @dataclass
@@ -155,14 +168,232 @@ class ReportRefs:
     def available(self) -> bool:
         return self.report_count > 0
 
+    def observes_object(self, object_name: str) -> bool:
+        """Does any reporting document look at this object at all?
+
+        Documents existing *somewhere* says nothing about an object none of them
+        mention — and the difference matters, because "no report references this
+        field" only means the field is unused if reports were looking at its
+        object in the first place. Otherwise the object is unobserved, and
+        treating that as unused condemns a whole schema on no evidence.
+
+        Only qualified `Object.Field` keys count: a bare field name cannot tell
+        us which object it belonged to, so it is not proof anyone looked here.
+        """
+        okey = _leaf(object_name).lower()
+        if not okey:
+            return False
+        prefix = okey + "."
+        return any(k.lower().startswith(prefix) for k in self.refs)
+
     def _reindex(self) -> None:
         self._lower = {k.lower(): k for k in self.refs}
+
+
+# ------------------------------------------------------- signal registry
+
+# The vocabulary of evidence a scan can carry. Everything downstream — which
+# dimensions get scored, what coverage percentage they are scored at, and what
+# the report says was missing — is derived from this, not from the --mode flag.
+#
+# A signal is COLLECTED when we actually consulted its source and know what it
+# holds, *even if it holds nothing*; it is UNAVAILABLE when we did not look or
+# the look failed. That distinction is the whole point. "The flows query
+# succeeded and the org has no autolaunched flow" supports the finding
+# D3.NO_SAFE_ACTIONS. "The flows query was rejected" does not — absence of
+# evidence is not evidence of absence, and a rule fed an UNAVAILABLE signal
+# must not run at all.
+SIGNAL_FIELD_SCHEMA      = "metadata.field_schema"
+SIGNAL_REPORT_REFERENCES = "usage.report_references"
+SIGNAL_RECORD_STATS      = "data.record_stats"
+SIGNAL_PERMISSION_SETS   = "permissions.permission_sets"
+SIGNAL_FLOWS             = "automation.flows"
+SIGNAL_APEX              = "automation.apex_classes"
+SIGNAL_TRIGGERS_FLOWS    = "automation.triggers_flows"
+
+# D2's three sub-signals. They exist because "we have record stats" is too
+# coarse to be honest: an org whose Name field is an auto-number gives a fill
+# rate and a staleness ratio but no duplicate signal at all, and reporting D2
+# at full coverage there would claim a duplicate check that never ran. Each is
+# gated on data.record_stats as well, so a dimension cannot inherit a
+# sub-signal from a collection that did not happen.
+SIGNAL_FILL_RATE   = "data.fill_rate"
+SIGNAL_STALENESS   = "data.staleness"
+SIGNAL_DUPLICATES  = "data.duplicates"
+
+# Reserved for the third-party ingest phase. Named here so the coverage
+# arithmetic and the OrgIQ_Finding__c.Source__c picklist agree from the start.
+# Nothing sets them yet; a dimension that requires one of them therefore
+# reports it as missing, which is the correct answer today.
+SIGNAL_OPTIMIZER     = "external.optimizer"
+SIGNAL_HEALTHCHECK   = "external.healthcheck"
+SIGNAL_CODEANALYZER  = "external.codeanalyzer"
+
+SIGNALS = (
+    SIGNAL_FIELD_SCHEMA, SIGNAL_REPORT_REFERENCES, SIGNAL_RECORD_STATS,
+    SIGNAL_FILL_RATE, SIGNAL_STALENESS, SIGNAL_DUPLICATES,
+    SIGNAL_PERMISSION_SETS, SIGNAL_FLOWS, SIGNAL_APEX, SIGNAL_TRIGGERS_FLOWS,
+    SIGNAL_OPTIMIZER, SIGNAL_HEALTHCHECK, SIGNAL_CODEANALYZER,
+)
+
+COLLECTED = "collected"
+UNAVAILABLE = "unavailable"
+
+# PRD §7.2.4: below this, a dimension is reported as partially assessed and
+# kept out of the composite. Exposed here so the scan assembler and the
+# dashboard agree on one number.
+COVERAGE_THRESHOLD = 0.70
+
+ASSESSED = "Assessed"
+PARTIALLY_ASSESSED = "Partially Assessed"
+NOT_ASSESSED = "Not Assessed"
+
+
+@dataclass
+class SignalStatus:
+    """What happened when we went looking for one signal.
+
+    `detail` is the reason a consumer can quote — "Analytics describe returned
+    FORBIDDEN for all 30 reports" is a usable sentence in a report; a bare
+    False is not. `item_count` is deliberately independent of `state`: a
+    collected signal with zero items is a real, useful answer."""
+    name: str
+    state: str = COLLECTED
+    detail: str = ""
+    item_count: int = 0
+
+    @property
+    def present(self) -> bool:
+        return self.state == COLLECTED
+
+
+@dataclass(frozen=True)
+class RuleSignals:
+    """What one rule needs before it is allowed to run.
+
+    `all_of` is a conjunction; `any_of` is satisfied by one member. The split
+    exists because some rules make a negative claim and some do not:
+    D3.NO_SAFE_ACTIONS asserts that *nothing* callable exists, so it needs both
+    the flow and the Apex signal or it would indict an org for a gap it never
+    looked at. D3.UNDOCUMENTED_ACTION only ever reports on components it can
+    see, so either signal alone lets it say something true."""
+    dimension: str
+    all_of: frozenset = frozenset()
+    any_of: frozenset = frozenset()
+
+    def runnable(self, present: frozenset) -> bool:
+        if not self.all_of <= present:
+            return False
+        return not self.any_of or bool(self.any_of & present)
+
+    def missing(self, present: frozenset) -> set:
+        gaps = set(self.all_of) - set(present)
+        if self.any_of and not (self.any_of & present):
+            gaps |= set(self.any_of)
+        return gaps
+
+
+def _needs(dim, *signals, any_of=()):
+    return RuleSignals(dim, frozenset(signals), frozenset(any_of))
+
+
+# Every rule in the packs, with the evidence it depends on. This is the
+# declaration the PRD calls for at rule granularity: coverage is not a constant
+# any more, it is the fraction of a dimension's rules that could actually run.
+RULE_SIGNALS = {
+    # D1 — orgiq_spike. Five rules read field metadata alone; the sixth claims a
+    # field is unused, which is only sayable once report metadata was read.
+    "D1.MISSING_DESCRIPTION":    _needs("D1", SIGNAL_FIELD_SCHEMA),
+    "D1.LOW_INFO_DESCRIPTION":   _needs("D1", SIGNAL_FIELD_SCHEMA),
+    "D1.CRYPTIC_API_NAME":       _needs("D1", SIGNAL_FIELD_SCHEMA),
+    "D1.NUMBERED_FAMILY":        _needs("D1", SIGNAL_FIELD_SCHEMA),
+    "D1.SEMANTIC_DUPLICATE":     _needs("D1", SIGNAL_FIELD_SCHEMA),
+    "D1.UNREFERENCED_FIELD":     _needs("D1", SIGNAL_FIELD_SCHEMA, SIGNAL_REPORT_REFERENCES),
+    # D2 — rules_ext. Record data or nothing, and each rule names the one
+    # measurement it reads: an org that yields a fill rate but no duplicate key
+    # is assessed for two of the three, not waved through at full coverage.
+    "D2.LOW_FILL_RATE":          _needs("D2", SIGNAL_RECORD_STATS, SIGNAL_FILL_RATE),
+    "D2.STALE_DATA":             _needs("D2", SIGNAL_RECORD_STATS, SIGNAL_STALENESS),
+    "D2.DUPLICATE_RECORDS":      _needs("D2", SIGNAL_RECORD_STATS, SIGNAL_DUPLICATES),
+    # D3 — rules_ext.
+    "D3.NO_SAFE_ACTIONS":        _needs("D3", SIGNAL_FLOWS, SIGNAL_APEX),
+    "D3.UNDOCUMENTED_ACTION":    _needs("D3", any_of=(SIGNAL_FLOWS, SIGNAL_APEX)),
+    "D3.INACTIVE_ACTION":        _needs("D3", SIGNAL_FLOWS),
+    "D3.APEX_NO_TESTS":          _needs("D3", SIGNAL_APEX),
+    # D4 — rules_ext.
+    "D4.MODIFY_ALL_DATA":        _needs("D4", SIGNAL_PERMISSION_SETS),
+    "D4.VIEW_ALL_DATA":          _needs("D4", SIGNAL_PERMISSION_SETS),
+    "D4.WIDE_OBJECT_ACCESS":     _needs("D4", SIGNAL_PERMISSION_SETS),
+    "D4.DELETE_GRANTED":         _needs("D4", SIGNAL_PERMISSION_SETS),
+    # D5 — rules_ext. The automation graph is one signal: a trigger and the
+    # record-triggered flow it collides with come from the same collection step.
+    "D5.MULTIPLE_TRIGGERS":      _needs("D5", SIGNAL_TRIGGERS_FLOWS),
+    "D5.DML_IN_LOOP":            _needs("D5", SIGNAL_TRIGGERS_FLOWS),
+    "D5.SOQL_IN_LOOP":           _needs("D5", SIGNAL_TRIGGERS_FLOWS),
+    "D5.NO_RECURSION_GUARD":     _needs("D5", SIGNAL_TRIGGERS_FLOWS),
+    "D5.TRIGGER_AND_FLOW":       _needs("D5", SIGNAL_TRIGGERS_FLOWS, SIGNAL_FLOWS),
+}
+
+DIMENSIONS = ("D1", "D2", "D3", "D4", "D5")
+
+# D1 is not a member: the D1 scanner owns its own inputs and the caller has
+# always decided D1 for itself. Kept out so assessable_dims() means exactly
+# what it meant before.
+_SCORED_BY_METADATA = ("D2", "D3", "D4", "D5")
+
+
+@dataclass
+class DimensionCoverage:
+    """Per-dimension answer to 'how much of this did we actually assess, and
+    what stopped us'."""
+    dimension: str
+    coverage: float                  # 0..1 — runnable rules / total rules
+    rules_runnable: int
+    rules_total: int
+    missing_signals: tuple = ()      # sorted signal names
+    reasons: dict = dc_field(default_factory=dict)   # signal -> why it is missing
+    blocked_rules: tuple = ()        # sorted rule ids that could not run
+
+    @property
+    def assessable(self) -> bool:
+        """At least one rule can run. Same bar assessable_dims() has always used."""
+        return self.rules_runnable > 0
+
+    @property
+    def status(self) -> str:
+        if not self.assessable:
+            return NOT_ASSESSED
+        return ASSESSED if self.coverage >= COVERAGE_THRESHOLD else PARTIALLY_ASSESSED
+
+    @property
+    def coverage_pct(self) -> float:
+        return round(self.coverage * 100, 1)
+
+    def explain(self) -> str:
+        """One sentence a report can print verbatim."""
+        head = (self.dimension + " " + self.status.lower() + " at "
+                + format(self.coverage_pct, ".1f") + "% rule coverage ("
+                + str(self.rules_runnable) + "/" + str(self.rules_total) + " rules)")
+        if not self.missing_signals:
+            return head
+        gaps = []
+        for s in self.missing_signals:
+            why = self.reasons.get(s)
+            gaps.append((s + " (" + why + ")") if why else s)
+        return head + " — missing: " + ", ".join(gaps)
 
 
 @dataclass
 class OrgMetadata:
     """Everything the D3/D4/D5 packs need. Empty lists mean 'not available',
-    which is what drives the assessed/not-assessed decision."""
+    which is what drives the assessed/not-assessed decision.
+
+    `signal_log` is the org-mode upgrade to that rule. Parsing a directory
+    cannot tell an empty flows folder from a project that has no flows, so
+    source mode infers signal presence from content and always has. A collector
+    that talks to an org *does* know the difference, and records it here; an
+    explicit entry overrides the inference. Leave it empty and behaviour is
+    exactly what it was."""
     flows: list = dc_field(default_factory=list)
     apex: list = dc_field(default_factory=list)
     triggers: list = dc_field(default_factory=list)
@@ -170,21 +401,139 @@ class OrgMetadata:
     record_stats: list = dc_field(default_factory=list)
     # Deliberately last: existing callers construct the five lists above.
     report_refs: ReportRefs = dc_field(default_factory=ReportRefs)
+    # Trailing and optional, for the same reason.
+    signal_log: dict = dc_field(default_factory=dict)    # name -> SignalStatus
+    # Field metadata lives with the D1 scanner, not here; this is the one hook
+    # that lets D1 coverage be computed from the same registry. Left at 0 and
+    # unlogged, D1 correctly reports metadata.field_schema as missing.
+    field_count: int = 0
+
+    # ------------------------------------------------------------- signals
+
+    def _measured(self, sub_signal: str) -> bool:
+        """Did any object actually yield this D2 sub-measurement? RecordStats
+        names the ones it could not take, so this reads the provenance the
+        collector left rather than trusting the benign default sitting in the
+        field."""
+        return any(sub_signal not in (s.unavailable or ()) for s in self.record_stats)
+
+    def _inferred(self) -> dict:
+        """Signal presence read off the content, which is all source mode can do."""
+        return {
+            SIGNAL_FIELD_SCHEMA: self.field_count > 0,
+            SIGNAL_REPORT_REFERENCES: self.report_refs.available,
+            SIGNAL_RECORD_STATS: bool(self.record_stats),
+            SIGNAL_FILL_RATE: self._measured("fill_rate"),
+            SIGNAL_STALENESS: self._measured("stale_ratio"),
+            SIGNAL_DUPLICATES: self._measured("duplicate_rate"),
+            SIGNAL_PERMISSION_SETS: bool(self.permission_sets),
+            SIGNAL_FLOWS: bool(self.flows),
+            SIGNAL_APEX: bool(self.apex),
+            # D5 collides triggers with record-triggered flows; a project of
+            # screen flows alone carries no automation graph.
+            SIGNAL_TRIGGERS_FLOWS: bool(self.triggers)
+            or any(f.is_record_triggered for f in self.flows),
+            # Nothing ingests these yet.
+            SIGNAL_OPTIMIZER: False,
+            SIGNAL_HEALTHCHECK: False,
+            SIGNAL_CODEANALYZER: False,
+        }
+
+    def record_signal(self, name: str, state: str = COLLECTED,
+                      detail: str = "", item_count: int = 0) -> None:
+        """State outright what happened to one signal. Collectors call this;
+        parsers do not."""
+        self.signal_log[name] = SignalStatus(name, state, detail, item_count)
+
+    def present_signals(self) -> frozenset:
+        inferred = self._inferred()
+        out = set()
+        for name in SIGNALS:
+            logged = self.signal_log.get(name)
+            present = logged.present if logged is not None else inferred[name]
+            if present:
+                out.add(name)
+        return frozenset(out)
+
+    def missing_signals(self) -> frozenset:
+        return frozenset(SIGNALS) - self.present_signals()
+
+    def signal_reason(self, name: str) -> str:
+        st = self.signal_log.get(name)
+        return st.detail if st is not None and not st.present else ""
+
+    # ------------------------------------------------------------ coverage
+
+    def coverage(self, dimension: str = None) -> dict:
+        """Per-dimension rule coverage: the fraction of that dimension's rules
+        whose required signals were collected, plus the names of the signals
+        that stopped the rest. Pass a dimension for one entry."""
+        present = self.present_signals()
+        dims = [dimension] if dimension else list(DIMENSIONS)
+        out = {}
+        for dim in dims:
+            rules = {rid: r for rid, r in RULE_SIGNALS.items() if r.dimension == dim}
+            runnable, blocked, gaps = 0, [], set()
+            for rid, r in sorted(rules.items()):
+                if r.runnable(present):
+                    runnable += 1
+                else:
+                    blocked.append(rid)
+                    gaps |= r.missing(present)
+            total = len(rules)
+            out[dim] = DimensionCoverage(
+                dimension=dim,
+                coverage=(runnable / total) if total else 0.0,
+                rules_runnable=runnable,
+                rules_total=total,
+                missing_signals=tuple(sorted(gaps)),
+                reasons={s: self.signal_reason(s) for s in sorted(gaps)
+                         if self.signal_reason(s)},
+                blocked_rules=tuple(blocked),
+            )
+        return out
+
+    def blocked_rules(self) -> frozenset:
+        """Rule ids whose required signals were not collected.
+
+        The registry only *reports* coverage; something still has to stop a
+        blocked rule from emitting. A rule that fires on evidence nobody
+        gathered is precisely the overclaim the coverage number is there to
+        prevent — D3.NO_SAFE_ACTIONS asserting an org exposes nothing callable
+        when the Apex it would have checked came back hidden. Callers that
+        assemble findings should run them through drop_blocked()."""
+        present = self.present_signals()
+        return frozenset(rid for rid, r in RULE_SIGNALS.items()
+                         if not r.runnable(present))
+
+    def drop_blocked(self, findings) -> tuple:
+        """(kept, dropped) — findings partitioned by whether their rule had the
+        evidence to run. Unknown rule ids are kept: a rule missing from the
+        registry is a registry gap, and silently deleting its findings would be
+        a worse failure than reporting them."""
+        blocked = self.blocked_rules()
+        kept = [f for f in findings if getattr(f, "rule_id", None) not in blocked]
+        dropped = [f for f in findings if getattr(f, "rule_id", None) in blocked]
+        return kept, dropped
 
     def assessable_dims(self) -> set:
         """Which dimensions actually have inputs. D1 is decided by the caller
         (it needs fields, which the D1 scanner already parses). Report refs are
-        deliberately absent: they weight existing findings, they do not score."""
-        dims = set()
-        if self.record_stats:
-            dims.add("D2")
-        if self.flows or self.apex:
-            dims.add("D3")
-        if self.permission_sets:
-            dims.add("D4")
-        if self.triggers or any(f.is_record_triggered for f in self.flows):
-            dims.add("D5")
-        return dims
+        deliberately absent from the decision: they weight existing findings,
+        they do not score.
+
+        Now derived from the signal registry rather than four hardcoded
+        branches. The answer is unchanged for every input the old code could
+        receive — verified exhaustively over the combinations of empty and
+        non-empty inputs — with one deliberate exception that only the new
+        collector can produce: a RecordStats whose three sub-measurements all
+        failed no longer makes D2 assessable. The old code counted the object
+        because a RecordStats existed; the object in that state carries three
+        benign defaults and nothing measured, and scoring D2 off it would be
+        the fabrication this rewrite exists to stop. org_mode never emits such
+        a record — it drops the object — so the case is theory, not practice."""
+        cov = self.coverage()
+        return {d for d in _SCORED_BY_METADATA if cov[d].assessable}
 
 
 # ---------------------------------------------------------------- parsers

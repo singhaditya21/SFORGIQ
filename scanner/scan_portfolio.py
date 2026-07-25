@@ -11,6 +11,17 @@ shows a remediation burn-down.
 Fields are generated in memory and run through the real D1 rules — findings are
 genuine rule output, not fabricated. Deterministic (seeded), stdlib only.
 
+The generated SIGNALS respect the scan mode each org is labelled with, which is
+the difference between a demo corpus and a demo lie. A Source-mode org gets no
+record-level statistics, because no directory on disk carries rows — so D2 comes
+out Not Assessed for those orgs, exactly as it does for a real source-mode scan.
+A couple of the Org-mode orgs get a partial D2 (the duplicate probe has nothing
+to group on, which is what an auto-number Name field does to a real org): those
+land under the 70% coverage bar and are reported Partially Assessed and kept out
+of the composite. Coverage in this file is never asserted, only generated —
+every percentage the portfolio shows is computed by the same signal registry the
+real scanner uses.
+
     python3 scanner/scan_portfolio.py --out portfolio.json
     python3 scanner/scan_portfolio.py --out portfolio.json --backlog backlog.csv
 """
@@ -225,7 +236,8 @@ def gen_report_refs(fields, r, rnd) -> md.ReportRefs:
     return refs
 
 
-def gen_org_metadata(objects, fields, r, rnd) -> md.OrgMetadata:
+def gen_org_metadata(objects, fields, r, rnd, mode="Org",
+                     dup_signal=True, report_metadata=True) -> md.OrgMetadata:
     """Build the Flow / Apex / trigger / permission-set / report material for one org.
 
     These are the *same structures* the SFDX parsers produce, and the *same*
@@ -233,6 +245,19 @@ def gen_org_metadata(objects, fields, r, rnd) -> md.OrgMetadata:
     the org's defect ratio. Bodies are real Apex text, so the DML-in-loop and
     recursion-guard heuristics genuinely fire, and the report references are real
     ReportRefs, so D1.UNREFERENCED_FIELD and the blast-radius weighting do too.
+
+    `mode` and `dup_signal` decide what EVIDENCE this org has, not what score it
+    gets. A Source-mode org gets no RecordStats at all — a directory carries no
+    rows — so its D2 is Not Assessed. `dup_signal=False` models the org whose
+    Name field is an auto-number: fill rate and staleness are measured, the
+    duplicate probe has nothing groupable to run on, and D2 lands at 2/3
+    coverage. `report_metadata=False` models the very common repo that simply
+    does not commit its reports and dashboards: D1.UNREFERENCED_FIELD cannot run
+    without them, so D1 comes out assessed at 5/6 — 83.3%, still over the bar
+    and still in the composite, but no longer the flat 100% every dimension used
+    to claim. None of the three is a fudge factor; all are conditions the real
+    collector reports every day, and the coverage arithmetic is left to draw its
+    own conclusion from them.
     """
     flows, apex, triggers, perms, stats = [], [], [], [], []
 
@@ -302,22 +327,46 @@ def gen_org_metadata(objects, fields, r, rnd) -> md.OrgMetadata:
     perms.append(md.PermissionSetMeta(api_name="Agent_Integration", label="Agent Integration",
                                       user_permissions=user_perms, object_perms=obj_perms))
 
-    # --- Record-level signal. Only a demo corpus can supply this without an org.
-    for obj in objects[:3]:
-        stats.append(md.RecordStats(
-            object_name=obj,
-            fill_rate=max(0.05, 1 - r * rnd.uniform(0.5, 1.25)),
-            stale_ratio=min(0.95, r * rnd.uniform(0.4, 1.1)),
-            duplicate_rate=min(0.5, r * rnd.uniform(0.05, 0.35)),
-        ))
+    # --- Record-level signal. It exists only where the scan actually reached an
+    # org: a Source-mode scan has no rows to measure, and inventing them here
+    # would score D2 off evidence the mode cannot produce.
+    if mode != "Source":
+        for obj in objects[:3]:
+            stats.append(md.RecordStats(
+                object_name=obj,
+                fill_rate=max(0.05, 1 - r * rnd.uniform(0.5, 1.25)),
+                stale_ratio=min(0.95, r * rnd.uniform(0.4, 1.1)),
+                # Left at the benign default when unmeasurable, and named in
+                # `unavailable` so nothing downstream reads 0.0 as "no
+                # duplicates" — the trap RecordStats documents.
+                duplicate_rate=(min(0.5, r * rnd.uniform(0.05, 0.35))
+                                if dup_signal else 0.0),
+                record_count=rnd.randint(2_000, 40_000),
+                sampled_fields=tuple(f.api_name for f in fields[:4]
+                                     if f.object_name == obj),
+                duplicate_key="Name" if dup_signal else "",
+                unavailable=() if dup_signal else ("duplicate_rate",),
+                notes=() if dup_signal else (
+                    "the Name field is an auto-number, so no duplicate probe "
+                    "could group on it",),
+            ))
 
     # Last, so adding it left every draw above unchanged and the D2–D5 findings
     # this portfolio already ships stayed byte-identical.
-    refs = gen_report_refs(fields, r, rnd)
+    refs = gen_report_refs(fields, r, rnd) if report_metadata else md.ReportRefs()
 
-    return md.OrgMetadata(flows=flows, apex=apex, triggers=triggers,
+    meta = md.OrgMetadata(flows=flows, apex=apex, triggers=triggers,
                           permission_sets=perms, record_stats=stats,
                           report_refs=refs)
+    if stats and not dup_signal:
+        # The explicit verdict an org collector would have logged. Inference
+        # would reach the same answer from `unavailable`; the log is what carries
+        # the REASON into the dimension record, so the dashboard can say why D2
+        # is only partly assessed instead of just that it is.
+        meta.record_signal(md.SIGNAL_DUPLICATES, md.UNAVAILABLE,
+                           "the Name field is an auto-number on every measured "
+                           "object, so this org offers no duplicate signal")
+    return meta
 
 
 def gen_org(name, industry, total_fields, defect_ratio, n_objects, mode, seed):
@@ -370,6 +419,21 @@ SPECS = [
 ]
 
 
+# Orgs whose primary object uses an auto-number Name. The duplicate probe has
+# nothing groupable to run on, so D2 is measured for fill rate and staleness and
+# not for duplicates — 2 of 3 rules, 66.7%, under the 70% bar. Named here rather
+# than rolled at random so a reader can see which orgs the portfolio's two
+# Partially Assessed dimensions belong to and check the arithmetic.
+AUTONUMBER_NAME_ORGS = frozenset({"Cascade Insurance", "Redwood Utilities"})
+
+# Source-mode orgs whose repository does not commit its reports and dashboards —
+# the ordinary case, not an exotic one. With no report metadata to check against,
+# D1.UNREFERENCED_FIELD cannot run and must not: an unused field and an
+# unobserved one look identical from there. D1 is assessed at 83.3%, and the
+# dimension record names the signal that cost it the other 16.7%.
+NO_REPORT_METADATA_ORGS = frozenset({"Fathom Media Networks", "Beacon Public Sector"})
+
+
 def build_portfolio():
     """Returns (scans, orgs) — the loadable records, and (name, findings) pairs
     kept as raw Findings so the backlog emitter can gate them itself."""
@@ -379,16 +443,34 @@ def build_portfolio():
         objects = sorted({f.object_name for f in fields})
         # Built before the D1 rules run: the report references gate
         # D1.UNREFERENCED_FIELD and weight every other D1 finding.
-        org_meta = gen_org_metadata(objects, fields, ratio, random.Random(5000 + i))
+        org_meta = gen_org_metadata(objects, fields, ratio, random.Random(5000 + i),
+                                    mode=m,
+                                    dup_signal=name not in AUTONUMBER_NAME_ORGS,
+                                    report_metadata=name not in NO_REPORT_METADATA_ORGS)
+        # D1's own signal. metadata.py cannot see Field — it is owned by the
+        # scanner — so without this the registry reports D1 as having no schema
+        # to read and the portfolio's strongest dimension scores nothing.
+        org_meta.field_count = len(fields)
         code_tokens = scanner.code_identifiers(org_meta)
         findings = scanner.all_d1_findings(fields, org_meta.report_refs, code_tokens)
         findings.extend(rules_ext.all_findings(org_meta))   # the real D2–D5 packs
+        # The same withholding a real scan applies: a rule whose signals were
+        # never collected does not get to report. On this corpus it is a no-op
+        # for every org — the generator only produces evidence the mode can
+        # actually carry — and it is here so it stays a no-op, loudly.
+        findings, withheld = org_meta.drop_blocked(findings)
+        if withheld:
+            # Said out loud rather than swallowed: it would mean the generator
+            # produced a finding from evidence it also declined to generate.
+            print(f"  note: {len(withheld)} finding(s) withheld for {name} — "
+                  f"{sorted({f.rule_id for f in withheld})}")
         # The same reference evidence goes to the scan record, so the payload
         # projection retires exactly the fields the backlog tickets for retirement.
         scans.append(scan_result.build(fields, findings, name, scan_mode=m,
                                        assessed_dims=frozenset({"D1"} | org_meta.assessable_dims()),
                                        report_refs=org_meta.report_refs,
-                                       code_tokens=code_tokens))
+                                       code_tokens=code_tokens,
+                                       coverage=org_meta.coverage()))
         orgs.append((name, findings))
     return scans, orgs
 
@@ -492,6 +574,17 @@ def main():
     print(f"  records:    {records} of {RECORD_BUDGET} budgeted "
           f"— {records * RECORD_KB / 1024:.2f} MB at {RECORD_KB} KB/record")
     print(f"  bands:      {bands}")
+    # Coverage is generated, not asserted — printed here so a change in what the
+    # synthetic orgs can evidence shows up in the run that produced it, rather
+    # than being discovered in the dashboard.
+    statuses = {}
+    for s in scans:
+        for d in s["dimensions"]:
+            key = (d["dimension"][:2], d["assessment_status"], d["rule_coverage"])
+            statuses[key] = statuses.get(key, 0) + 1
+    print("  coverage:")
+    for (code, status, pct), n in sorted(statuses.items()):
+        print(f"                {code}  {status:<20} {pct:>5.1f}%  {n:>2} org(s)")
     if records > RECORD_BUDGET:
         # Said out loud here rather than discovered halfway through a bulk load,
         # which leaves the org holding a partial portfolio.
