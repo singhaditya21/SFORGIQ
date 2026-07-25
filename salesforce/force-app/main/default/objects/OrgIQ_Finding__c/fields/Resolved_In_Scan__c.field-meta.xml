@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Resolved_In_Scan__c</fullName>
+    <description>External id of the scan in which this finding stopped being reported. With the scan it first appeared in, this gives how long the defect survived — elapsed time, which is observable, as opposed to effort, which is not.</description>
+    <inlineHelpText>Scan where this finding stopped being reported.</inlineHelpText>
+    <label>Resolved In Scan</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

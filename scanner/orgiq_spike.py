@@ -400,7 +400,31 @@ def jaccard(a: frozenset, b: frozenset) -> float:
 VOWELS = set("aeiouy")
 
 
+# A field the org did not build and cannot change. Managed-package fields carry
+# their publisher's namespace — `nFORCE__LegacyKey__c` — and are read-only to the
+# subscriber: no description can be added, no name corrected, no retirement
+# performed. Every finding on one is a ticket nobody can close, and a backlog
+# that contains those stops being trusted for the ones that are actionable.
+#
+# Deliberately narrow: `Namespace__Field__c` has two separators, an ordinary
+# custom field has one. A field merely *containing* an underscore pair is not
+# enough, or `Contact1_Email__c` would be excluded.
+_MANAGED = re.compile(r"^\w+__\w+__(c|mdt|e)$", re.I)
+
+
+def is_managed(field) -> bool:
+    """True when the field belongs to an installed package."""
+    return bool(_MANAGED.match(getattr(field, "api_name", "") or ""))
+
+
+def own_fields(fields):
+    """Only the fields this org can actually change."""
+    return [f for f in fields if not is_managed(f)]
+
+
 def rule_missing_description(fields: list[Field]) -> list[Finding]:
+    """A field with nothing said about it. A retriever has only its name to go on."""
+    fields = own_fields(fields)
     out = []
     for f in fields:
         if not f.description.strip():
@@ -416,6 +440,7 @@ def rule_missing_description(fields: list[Field]) -> list[Finding]:
 def rule_low_information_description(fields: list[Field]) -> list[Finding]:
     """A description that restates the label carries no disambiguating
     information — it is payload with no retrieval benefit (PRD §5.5)."""
+    fields = own_fields(fields)
     out = []
     for f in fields:
         d = f.description.strip()
@@ -436,6 +461,8 @@ def rule_low_information_description(fields: list[Field]) -> list[Finding]:
 
 
 def rule_cryptic_api_name(fields: list[Field]) -> list[Finding]:
+    """A name a reader without tribal knowledge cannot resolve."""
+    fields = own_fields(fields)
     out = []
     for f in fields:
         stem, toks = f.stem, tokenise(f.api_name)
@@ -473,6 +500,7 @@ def rule_numbered_family(fields: list[Field], min_size: int = 2) -> list[Finding
     """Repeating numbered field groups. Legitimate as a design choice, but a
     real grounding problem: N near-identical candidates for a retriever to
     choose between, usually with identical descriptions."""
+    fields = own_fields(fields)
     out = []
     by_obj = defaultdict(lambda: defaultdict(list))
     for f in fields:
@@ -498,6 +526,7 @@ def rule_semantic_duplicate(fields: list[Field], threshold: float = 0.85) -> lis
     strong signal. Tier 2 compares after stripping encoding markers, which is
     weaker and emits at Low confidence only, and never where the residual
     meaning is degenerate or entirely generic."""
+    fields = own_fields(fields)
     out = []
     by_obj = defaultdict(list)
     for f in fields:
@@ -628,6 +657,8 @@ def rule_unreferenced_field(fields: list[Field], report_refs=None,
             continue                   # standard fields are not ours to retire
         if f.type == "MasterDetail":
             continue                   # structural — retiring it deletes the relationship
+        if is_managed(f):
+            continue                   # installed package — not ours to retire
         if f.object_name not in observed:
             observed[f.object_name] = report_refs.observes_object(f.object_name)
         if not observed[f.object_name]:

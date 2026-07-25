@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Expert_Estimate_Points__c</fullName>
+    <description>What a practitioner said this would take, before anyone did it. Deliberately a separate field from Actual_Effort_Points__c: an expert's judgement calibrating another judgement is not measurement, and mixing the two would let the model look measured when it is only agreed-with.</description>
+    <inlineHelpText>A practitioner's estimate. Not an outcome — see Actual Effort Points for that.</inlineHelpText>
+    <label>Expert Estimate Points</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>1</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

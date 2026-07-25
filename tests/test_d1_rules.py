@@ -95,3 +95,36 @@ def test_numbered_family_is_not_reported_as_a_duplicate():
 def test_entirely_generic_residual_is_not_a_duplicate():
     out = s.rule_semantic_duplicate([field("Record_Value__c"), field("Item_Data__c")])
     assert out == []
+
+
+# ------------------------------------------------- managed-package fields
+
+def test_no_rule_ticks_a_field_the_org_cannot_change():
+    """Found when a calibration worksheet put `nFORCE__LegacyKey__c` in front of
+    a practitioner to estimate. Managed-package fields are read-only to the
+    subscriber: no description can be added, no name corrected, nothing retired.
+    Every finding on one is a ticket nobody can close, and a backlog carrying 86
+    of them stops being trusted for the ones that are real."""
+    import metadata as md
+    managed = field("nFORCE__LegacyKey__c", object_name="Policy__c")
+    twin = field("nFORCE__LegacyKey2__c", object_name="Policy__c")
+    refs = md.ReportRefs(report_count=3, refs={"Policy__c.Other__c": 2})
+
+    produced = (s.rule_missing_description([managed])
+                + s.rule_cryptic_api_name([managed])
+                + s.rule_numbered_family([managed, twin])
+                + s.rule_semantic_duplicate([managed, twin])
+                + s.rule_unreferenced_field([managed], refs)
+                + s.rule_low_information_description(
+                    [field("nFORCE__Seg__c", "nFORCE Seg", description="nFORCE Seg",
+                           object_name="Policy__c")]))
+    assert produced == []
+
+
+def test_an_ordinary_custom_field_is_not_mistaken_for_a_packaged_one():
+    """The guard keys on the namespace separator, so it must not swallow a field
+    whose own name merely contains an underscore."""
+    assert s.is_managed(field("Contact1_Email__c")) is False
+    assert s.is_managed(field("Cust_Tier__c")) is False
+    assert s.is_managed(field("nFORCE__LegacyKey__c")) is True
+    assert s.rule_missing_description([field("Contact1_Email__c")]) != []
