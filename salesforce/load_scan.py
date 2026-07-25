@@ -138,7 +138,7 @@ def main():
     f_cols = ["External_Finding_Id__c", "Scan__c", "Rule_Id__c", "Dimension__c",
               "Severity__c", "Confidence__c", "Component_Type__c",
               "Component_Api_Name__c", "Evidence__c", "Epic__c",
-              "Remediation__c", "Acceptance_Criteria__c", "Effort_Points__c",
+              "Remediation__c", "Acceptance_Criteria__c", "Effort_Points__c", "Effort_Basis__c",
               "Blast_Radius__c", "Source__c", "Emits_To_Backlog__c",
               "Rule_Maturity__c"]
     f_rows = [{
@@ -155,6 +155,7 @@ def main():
         "Remediation__c": f["remediation"],
         "Acceptance_Criteria__c": f["acceptance_criteria"],
         "Effort_Points__c": f["effort_points"],
+        "Effort_Basis__c": f.get("effort_basis", "")[:255],
         "Blast_Radius__c": f["blast_radius"],
         "Source__c": f["source"],
         "Emits_To_Backlog__c": _b(f["emits_to_backlog"]),

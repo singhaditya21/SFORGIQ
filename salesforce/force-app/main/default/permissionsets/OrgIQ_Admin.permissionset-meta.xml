@@ -264,4 +264,14 @@
         <readable>true</readable>
         <editable>true</editable>
     </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Finding__c.Actual_Effort_Points__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Finding__c.Effort_Basis__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
 </PermissionSet>

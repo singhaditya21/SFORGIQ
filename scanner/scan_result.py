@@ -50,6 +50,7 @@ from datetime import datetime, timezone
 
 import backlog  # sibling module (remediation, effort, gate, external id)
 import density  # sibling module (deterministic grounding estimates)
+import effort as effort_mod  # evidence-responsive effort + calibration loop
 import persona as persona_mod  # capability surfaces + blast radius
 import metadata as sfmeta  # signal registry: coverage threshold + status vocabulary
 
@@ -308,7 +309,23 @@ def infer_org_type(name: str) -> str:
     return "Other"
 
 
-def finding_rows(findings, scan_external_id: str, blast=None) -> list:
+def _group_size(f) -> int:
+    """Members in a clustered finding. Group rules carry them in `detail`,
+    separated by ' | '; everything else is one component."""
+    if f.detail and " | " in f.detail:
+        return len([p for p in f.detail.split("|") if p.strip()])
+    return 1
+
+
+def _est(f, base_points, blast, org_type):
+    return effort_mod.estimate(
+        f.rule_id, base_points,
+        blast=(persona_mod.radius_for(f.component, blast) if blast else 0),
+        group_size=_group_size(f), org_type=org_type)
+
+
+def finding_rows(findings, scan_external_id: str, blast=None,
+                 org_type: str = "") -> list:
     """Shape raw Findings into loadable finding records.
 
     Split out of build() because drift findings cannot exist when build()
@@ -324,6 +341,7 @@ def finding_rows(findings, scan_external_id: str, blast=None) -> list:
     rows = []
     for f in findings:
         play = backlog._play(f.rule_id)
+        est = _est(f, play["points"], blast, org_type)
         evidence = f.evidence if not f.detail else f"{f.evidence} — {f.detail}"
         rows.append({
             # Keyed on the SCAN, not the org. A finding is a child of one scan,
@@ -344,7 +362,14 @@ def finding_rows(findings, scan_external_id: str, blast=None) -> list:
             # Carried alongside the fix so a record says how the owner knows the
             # work is done — otherwise only the Jira CSV ever shows it.
             "acceptance_criteria": play["acceptance"],
-            "effort_points": play["points"],
+            # The playbook's number is judgement about the RULE; this scan also
+            # measured things about this particular finding — how many components
+            # depend on it, how many members a cluster has, which org it is in.
+            # Those move the estimate. The basis records how, and under which
+            # model version, so a recorded actual is never compared against a
+            # different model by accident.
+            "effort_points": est.points,
+            "effort_basis": est.basis,
             # 0 when no dependency index was supplied — which means "not
             # measured", not "nothing depends on this".
             "blast_radius": (persona_mod.radius_for(f.component, blast) if blast else 0),
@@ -420,7 +445,8 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
     }
 
     return {"org": org, "scan": scan, "dimensions": dim_rows,
-            "findings": finding_rows(findings, scan["external_scan_id"], blast)}
+            "findings": finding_rows(findings, scan["external_scan_id"], blast,
+                                     org["org_type"])}
 
 
 def write_json(result: dict, path: str):

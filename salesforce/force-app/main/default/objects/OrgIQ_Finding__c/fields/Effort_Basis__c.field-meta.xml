@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Effort_Basis__c</fullName>
+    <description>How this estimate was derived, including the model version. An actual recorded against one model version must never be compared against another silently.</description>
+    <inlineHelpText>Derivation of the effort estimate, and the model version behind it.</inlineHelpText>
+    <label>Effort Basis</label>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

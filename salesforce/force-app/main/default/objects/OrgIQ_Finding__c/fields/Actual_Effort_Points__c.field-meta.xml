@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Actual_Effort_Points__c</fullName>
+    <description>What this remediation actually took, filled in once the work is done. This is the only input that can ever calibrate the estimate — until enough of these exist, Effort_Points__c is judgement, not measurement.</description>
+    <inlineHelpText>Points the work actually took. Leave blank until the ticket is closed.</inlineHelpText>
+    <label>Actual Effort Points</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>1</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

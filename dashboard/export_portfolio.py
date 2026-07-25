@@ -67,7 +67,7 @@ def main():
         "SELECT Scan__r.External_Scan_Id__c, External_Finding_Id__c, Rule_Id__c, "
         "Dimension__c, Severity__c, Confidence__c, Component_Type__c, "
         "Component_Api_Name__c, Evidence__c, Remediation__c, Epic__c, "
-        "Acceptance_Criteria__c, Source__c, Effort_Points__c, "
+        "Acceptance_Criteria__c, Source__c, Effort_Points__c, Effort_Basis__c, Actual_Effort_Points__c, "
         "Blast_Radius__c, Emits_To_Backlog__c, Rule_Maturity__c, Status__c "
         "FROM OrgIQ_Finding__c", org)
 
@@ -103,6 +103,8 @@ def main():
             "acceptanceCriteria": f["Acceptance_Criteria__c"] or "",
             "source": f["Source__c"] or "",
             "effortPoints": f["Effort_Points__c"],
+            "effortBasis": f["Effort_Basis__c"] or "",
+            "actualEffort": f["Actual_Effort_Points__c"],
             "blastRadius": f["Blast_Radius__c"],
             "emitsToBacklog": f["Emits_To_Backlog__c"],
             "ruleMaturity": f["Rule_Maturity__c"],
