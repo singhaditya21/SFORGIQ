@@ -43,6 +43,7 @@ token count.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -247,7 +248,19 @@ def _composite(dim_rows, findings) -> tuple:
 
 
 def _org_slug(source: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", source.lower()).strip("-")[:24] or "org"
+    """A readable, and unique, slug.
+
+    Truncation alone is not safe: an estate names its sandboxes off a common
+    prefix, so "Meridian Insurance · dev-core" and "· dev-claims" both cut to
+    the same 24 characters and two orgs collapse into one id. When the name is
+    cut, a short digest of the whole name goes back on the end — the readable
+    part is still readable, and what distinguishes the two orgs survives.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", source.lower()).strip("-") or "org"
+    if len(slug) <= 24:
+        return slug
+    digest = hashlib.sha1(slug.encode("utf-8")).hexdigest()[:6]
+    return slug[:24].rstrip("-") + "-" + digest
 
 
 def _org_external_id(source: str) -> str:
@@ -361,7 +374,12 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
         play = backlog._play(f.rule_id)
         evidence = f.evidence if not f.detail else f"{f.evidence} — {f.detail}"
         finding_rows.append({
-            "external_finding_id": backlog._external_id(f, source),
+            # Keyed on the SCAN, not the org. A finding is a child of one scan,
+            # and now that scan ids carry their date an org holds several — so an
+            # org-keyed id would collide the moment two of its scans coexist.
+            # Re-running the same scan is still idempotent, which is what the
+            # finding lifecycle relies on: same day, same scan id, same finding id.
+            "external_finding_id": backlog._external_id(f, scan["external_scan_id"]),
             "rule_id": f.rule_id,
             "dimension": f.dimension,
             "severity": f.severity,

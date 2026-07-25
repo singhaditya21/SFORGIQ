@@ -488,7 +488,50 @@ export function splitName(name) {
   const i = name.indexOf(' · ')
   return i === -1 ? { base: name, label: '' } : { base: name.slice(0, i), label: name.slice(i + 3) }
 }
+// Demo mode ships more than one enterprise so an insurer and a bank can each see
+// themselves; a real install has exactly one estate, because the hub org IS the
+// enterprise. Grouping on the name prefix keeps that out of the schema entirely:
+// nothing here, and nothing in Salesforce, has a concept of "enterprise".
+export function enterprisesOf(scans) {
+  const seen = []
+  for (const s of scans) {
+    const base = splitName(s.scan.targetOrg).base
+    if (!seen.includes(base)) seen.push(base)
+  }
+  return seen
+}
+
+export function scansForEnterprise(scans, name) {
+  if (!name) return scans
+  return scans.filter((s) => splitName(s.scan.targetOrg).base === name)
+}
+
+// An org now holds more than one scan — the estate dates its scan ids, so today's
+// scan sits next to last quarter's. Everything that answers "what is the estate
+// like" must read the LATEST scan per org, or one remediated org appears four
+// times and drags its own average down.
+export function latestScans(scans) {
+  const best = new Map()
+  for (const s of scans) {
+    const key = s.scan.targetOrg
+    const prev = best.get(key)
+    if (!prev || String(s.scan.timestamp) > String(prev.scan.timestamp)) best.set(key, s)
+  }
+  return [...best.values()]
+}
+
+// The same org over time, oldest first — the burn-down.
+export function historyOf(scans, targetOrg) {
+  return scans
+    .filter((s) => s.scan.targetOrg === targetOrg)
+    .sort((a, b) => String(a.scan.timestamp).localeCompare(String(b.scan.timestamp)))
+}
+
 export function familyOf(scans, scan) {
+  const series = historyOf(scans, scan.targetOrg)
+  if (series.length > 1) {
+    return { base: scan.targetOrg, members: series }
+  }
   const base = splitName(scan.targetOrg).base
   const members = scans
     .filter((s) => splitName(s.scan.targetOrg).base === base)

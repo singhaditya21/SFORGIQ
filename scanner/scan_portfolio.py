@@ -35,10 +35,14 @@ import random
 
 import backlog                         # gate + row shaping for the Jira CSV
 import density                         # REMOVABLE_KEYS — the payload breakdown buckets
+import enterprises
 import metadata as md                  # Flow / Apex / trigger / permission-set model
 import orgiq_spike as scanner          # Field, RULES, ABBREV
 import rules_ext                       # the real D2–D5 rule packs
 import scan_result
+from datetime import datetime, timezone
+
+_NOW = datetime.now(timezone.utc)
 
 Field = scanner.Field
 ABBREV = scanner.ABBREV
@@ -280,7 +284,12 @@ def gen_org_metadata(objects, fields, r, rnd, mode="Org",
 
     # --- Apex: invocable classes; clean orgs also ship tests
     for i in range(rnd.randint(1, 3)):
-        cls = f"{objects[min(i, len(objects) - 1)][:-3]}Service"
+        # The index is part of the name, not just the object: with fewer objects
+        # than iterations the clamp hands back the same object twice, and two
+        # classes sharing a name means two identical findings — which collide on
+        # one external id at load time.
+        obj_for_cls = objects[min(i, len(objects) - 1)][:-3]
+        cls = f"{obj_for_cls}Service" if i == 0 else f"{obj_for_cls}Service{i + 1}"
         labelled = rnd.random() > r
         label_part = '(label="Run ' + cls + '")' if labelled else ''
         apex.append(md.ApexClassMeta(api_name=cls, sharing="with sharing", body=(
@@ -369,6 +378,129 @@ def gen_org_metadata(objects, fields, r, rnd, mode="Org",
     return meta
 
 
+# --------------------------------------------------- enterprise generation
+
+def _fld(obj, api, ftype, desc):
+    return Field(object_name=obj, api_name=api, label=_label(api),
+                 type=ftype, description=desc, help_text="", path="")
+
+
+# The last two fields of each object stand for "added recently". `behind` orgs
+# were refreshed before they landed, so this is what they are missing.
+_RECENT_PER_OBJECT = 2
+
+
+def base_schema(ent) -> list:
+    """The enterprise's schema as designed — before the years happen to it."""
+    out = []
+    for obj, fields in ent["objects"].items():
+        for api, ftype, desc in fields:
+            out.append(_fld(obj, api, ftype, desc))
+    for api, ftype in enterprises.MANAGED_FIELDS[ent["industry"]]:
+        # Hung off the first object; not ours to fix, and the rules know it.
+        out.append(_fld(list(ent["objects"])[0], api, ftype, ""))
+    return out
+
+
+def apply_drift(fields, drift, ent, rnd) -> list:
+    """Make an org differ from its estate the way a real sandbox does.
+
+    This is the point of the whole fixture: two orgs that differ for a
+    *reason* — unreleased work, a stale refresh, a hotfix that never went back —
+    are what makes a difference between them worth reporting.
+    """
+    fields = list(fields)
+    if drift == "behind":
+        recent = set()
+        for obj in {f.object_name for f in fields}:
+            of = [f for f in fields if f.object_name == obj]
+            recent.update(f.api_name for f in of[-_RECENT_PER_OBJECT:])
+        return [f for f in fields if f.api_name not in recent]
+    if drift == "ahead":
+        obj = rnd.choice(sorted({f.object_name for f in fields}))
+        for i in range(rnd.randint(3, 6)):
+            fields.append(_fld(obj, f"Rework_Stage_{i+1}__c", "Text",
+                               "Added by the in-flight rework; not yet released."))
+        return fields
+    if drift == "hotfix":
+        obj = rnd.choice(sorted({f.object_name for f in fields}))
+        for i in range(rnd.randint(2, 4)):
+            fields.append(_fld(obj, f"Hotfix_Override_{i+1}__c", "Text", ""))
+        return fields
+    if drift == "divergent":
+        # An acquisition: same business, schema nobody reconciled.
+        prefix = "Legacy"
+        out = []
+        for obj, defs in list(ent["objects"].items())[:2]:
+            lobj = f"{prefix}_{obj}"
+            for api, ftype, _ in defs:
+                out.append(_fld(lobj, api.replace("__c", "_Old__c"), ftype, ""))
+        return out
+    return fields
+
+
+def _unique(name, used):
+    """An org cannot hold two fields with the same API name — and if the
+    generator emits one, the rules fire twice on it and two findings collapse
+    onto one external id at load time. Suffix until it is genuinely new."""
+    if name not in used:
+        used.add(name)
+        return name
+    for n in range(2, 40):
+        alt = name.replace("__c", f"_{n}__c")
+        if alt not in used:
+            used.add(alt)
+            return alt
+    return None
+
+
+def degrade(fields, ratio, rnd) -> list:
+    """Fifteen years of unreviewed change, applied to a sensible schema.
+
+    Generating defects directly produces noise; degrading a considered schema
+    produces debt — which is what the rules are meant to find.
+    """
+    out, by_obj = [], {}
+    for f in fields:
+        by_obj.setdefault(f.object_name, []).append(f)
+    used = {(f.object_name, f.api_name) for f in fields}
+
+    for obj, fs in by_obj.items():
+        for f in fs:
+            if f.api_name.count("__") > 1 or "__" in f.api_name.split("__c")[0][:12] and "_" not in f.api_name[:3]:
+                pass
+            roll = rnd.random()
+            if roll < ratio * 0.45 and f.description:
+                out.append(_fld(obj, f.api_name, f.type, ""))            # description lost
+            elif roll < ratio * 0.60 and f.description:
+                out.append(_fld(obj, f.api_name, f.type, f.label))       # restates the label
+            else:
+                out.append(f)
+        # Structural debt, sized by how ungoverned the org is.
+        n = len(fs)
+        for i in range(int(n * ratio * 0.18)):
+            src = rnd.choice(fs)
+            stem = src.api_name.replace("__c", "")
+            name = _unique(f"{stem[:12]}_Cd__c", {n for o, n in used if o == obj})
+            if name:
+                used.add((obj, name))
+                out.append(_fld(obj, name, "Text", ""))                   # cryptic twin
+        if rnd.random() < ratio:
+            base = rnd.choice(["Contact", "Adjuster", "Signatory", "Reviewer"])
+            for i in range(rnd.randint(2, 4)):
+                name = _unique(f"{base}{i+1}_Ref__c", {n for o, n in used if o == obj})
+                if name:
+                    used.add((obj, name))
+                    out.append(_fld(obj, name, "Text", ""))               # numbered family
+    return out
+
+
+def gen_enterprise_org(ent, org_name, org_type, ratio, drift, seed):
+    rnd = random.Random(seed)
+    fields = apply_drift(base_schema(ent), drift, ent, rnd)
+    return degrade(fields, ratio, rnd)
+
+
 def gen_org(name, industry, total_fields, defect_ratio, n_objects, mode, seed):
     rnd = random.Random(seed)
     objs = [f"{industry}_{rnd.choice(ENTITIES)}{i+1}__c" for i in range(n_objects)]
@@ -424,54 +556,99 @@ SPECS = [
 # not for duplicates — 2 of 3 rules, 66.7%, under the 70% bar. Named here rather
 # than rolled at random so a reader can see which orgs the portfolio's two
 # Partially Assessed dimensions belong to and check the arithmetic.
-AUTONUMBER_NAME_ORGS = frozenset({"Cascade Insurance", "Redwood Utilities"})
+AUTONUMBER_NAME_ORGS = frozenset({"Meridian Insurance · gladstone",
+                                  "Northgate Bank · legacy-core"})
 
 # Source-mode orgs whose repository does not commit its reports and dashboards —
 # the ordinary case, not an exotic one. With no report metadata to check against,
 # D1.UNREFERENCED_FIELD cannot run and must not: an unused field and an
 # unobserved one look identical from there. D1 is assessed at 83.3%, and the
 # dimension record names the signal that cost it the other 16.7%.
-NO_REPORT_METADATA_ORGS = frozenset({"Fathom Media Networks", "Beacon Public Sector"})
+NO_REPORT_METADATA_ORGS = frozenset({"Meridian Insurance · dev-core"})
 
 
 def build_portfolio():
     """Returns (scans, orgs) — the loadable records, and (name, findings) pairs
-    kept as raw Findings so the backlog emitter can gate them itself."""
+    kept as raw Findings so the backlog emitter can gate them itself.
+
+    Walks the estates rather than a flat list of companies. An org belongs to an
+    enterprise, carries its place in the promotion path, and is derived from that
+    estate's base schema — so two orgs differing is a fact about one business
+    rather than a coincidence between two unrelated ones.
+    """
     scans, orgs = [], []
-    for i, (name, industry, size, ratio, nobj, mode) in enumerate(SPECS):
-        _, m, fields = gen_org(name, industry, size, ratio, nobj, mode, seed=1000 + i)
-        objects = sorted({f.object_name for f in fields})
-        # Built before the D1 rules run: the report references gate
-        # D1.UNREFERENCED_FIELD and weight every other D1 finding.
-        org_meta = gen_org_metadata(objects, fields, ratio, random.Random(5000 + i),
-                                    mode=m,
-                                    dup_signal=name not in AUTONUMBER_NAME_ORGS,
-                                    report_metadata=name not in NO_REPORT_METADATA_ORGS)
-        # D1's own signal. metadata.py cannot see Field — it is owned by the
-        # scanner — so without this the registry reports D1 as having no schema
-        # to read and the portfolio's strongest dimension scores nothing.
-        org_meta.field_count = len(fields)
-        code_tokens = scanner.code_identifiers(org_meta)
-        findings = scanner.all_d1_findings(fields, org_meta.report_refs, code_tokens)
-        findings.extend(rules_ext.all_findings(org_meta))   # the real D2–D5 packs
-        # The same withholding a real scan applies: a rule whose signals were
-        # never collected does not get to report. On this corpus it is a no-op
-        # for every org — the generator only produces evidence the mode can
-        # actually carry — and it is here so it stays a no-op, loudly.
-        findings, withheld = org_meta.drop_blocked(findings)
-        if withheld:
-            # Said out loud rather than swallowed: it would mean the generator
-            # produced a finding from evidence it also declined to generate.
-            print(f"  note: {len(withheld)} finding(s) withheld for {name} — "
-                  f"{sorted({f.rule_id for f in withheld})}")
-        # The same reference evidence goes to the scan record, so the payload
-        # projection retires exactly the fields the backlog tickets for retirement.
-        scans.append(scan_result.build(fields, findings, name, scan_mode=m,
-                                       assessed_dims=frozenset({"D1"} | org_meta.assessable_dims()),
-                                       report_refs=org_meta.report_refs,
-                                       code_tokens=code_tokens,
-                                       coverage=org_meta.coverage()))
-        orgs.append((name, findings))
+    i = -1
+    for ent in enterprises.ENTERPRISES:
+        for spec in ent["orgs"]:
+            (org_name, org_type, ratio, drift, refreshed, notes) = spec[:6]
+            m, history = (spec[6], spec[7]) if len(spec) > 6 else ("Org", 0)
+            i += 1
+            name = enterprises.org_display_name(ent["name"], org_name)
+            fields = gen_enterprise_org(ent, org_name, org_type, ratio, drift, seed=1000 + i)
+            objects = sorted({f.object_name for f in fields})
+            # Built before the D1 rules run: the report references gate
+            # D1.UNREFERENCED_FIELD and weight every other D1 finding.
+            org_meta = gen_org_metadata(objects, fields, ratio, random.Random(5000 + i),
+                                        mode=m,
+                                        dup_signal=name not in AUTONUMBER_NAME_ORGS,
+                                        report_metadata=name not in NO_REPORT_METADATA_ORGS)
+            # D1's own signal. metadata.py cannot see Field — it is owned by the
+            # scanner — so without this the registry reports D1 as having no schema
+            # to read and the portfolio's strongest dimension scores nothing.
+            org_meta.field_count = len(fields)
+            code_tokens = scanner.code_identifiers(org_meta)
+            findings = scanner.all_d1_findings(fields, org_meta.report_refs, code_tokens)
+            findings.extend(rules_ext.all_findings(org_meta))   # the real D2–D5 packs
+            # The same withholding a real scan applies: a rule whose signals were
+            # never collected does not get to report. On this corpus it is a no-op
+            # for every org — the generator only produces evidence the mode can
+            # actually carry — and it is here so it stays a no-op, loudly.
+            findings, withheld = org_meta.drop_blocked(findings)
+            if withheld:
+                # Said out loud rather than swallowed: it would mean the generator
+                # produced a finding from evidence it also declined to generate.
+                print(f"  note: {len(withheld)} finding(s) withheld for {name} — "
+                      f"{sorted({f.rule_id for f in withheld})}")
+            # The same reference evidence goes to the scan record, so the payload
+            # projection retires exactly the fields the backlog tickets for retirement.
+            scans.append(scan_result.build(fields, findings, name, scan_mode=m,
+                                           assessed_dims=frozenset({"D1"} | org_meta.assessable_dims()),
+                                           report_refs=org_meta.report_refs,
+                                           code_tokens=code_tokens,
+                                           coverage=org_meta.coverage(),
+                                           org_type=org_type,
+                                           org_overrides={"last_refreshed": refreshed,
+                                                          "notes": notes}))
+            orgs.append((name, findings))
+
+            # Prior quarters for orgs that carry a history. Same org, earlier
+            # date, more debt — remediation running backwards from today, which
+            # is what makes a burn-down readable rather than a single number.
+            for q in range(1, history + 1):
+                # Count in months and derive the date, rather than adjusting
+                # month and year separately: subtracting three months from a Q1
+                # date underflows, and the naive version put the oldest scan in
+                # the future, which reversed the whole series.
+                total = (_NOW.year * 12 + _NOW.month - 1) - 3 * q
+                past = _NOW.replace(year=total // 12, month=total % 12 + 1, day=1)
+                worse = min(0.97, ratio + 0.07 * q)
+                pf = gen_enterprise_org(ent, org_name, org_type, worse, drift,
+                                        seed=1000 + i)
+                pm = gen_org_metadata(sorted({f.object_name for f in pf}), pf, worse,
+                                      random.Random(5000 + i), mode=m,
+                                      dup_signal=name not in AUTONUMBER_NAME_ORGS,
+                                      report_metadata=name not in NO_REPORT_METADATA_ORGS)
+                pm.field_count = len(pf)
+                pct = scanner.code_identifiers(pm)
+                pfind = scanner.all_d1_findings(pf, pm.report_refs, pct)
+                pfind.extend(rules_ext.all_findings(pm))
+                pfind, _ = pm.drop_blocked(pfind)
+                scans.append(scan_result.build(
+                    pf, pfind, name, scan_mode=m,
+                    assessed_dims=frozenset({"D1"} | pm.assessable_dims()),
+                    report_refs=pm.report_refs, code_tokens=pct,
+                    coverage=pm.coverage(), now=past, org_type=org_type,
+                    org_overrides={"last_refreshed": refreshed, "notes": notes}))
     return scans, orgs
 
 

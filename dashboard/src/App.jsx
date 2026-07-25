@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { loadPortfolio } from './lib/data.js'
+import { loadPortfolio, enterprisesOf, scansForEnterprise, latestScans } from './lib/data.js'
 import {
   LIVE, isConfigured, beginLogin, handleRedirect, getStoredToken, loadLive, logout,
 } from './lib/live.js'
@@ -39,6 +39,11 @@ export default function App() {
   // or "you are already connected, here is what is missing".
   const [authed, setAuthed] = useState(false)
   const [error, setError] = useState(null)
+  // Demo mode carries two estates so an insurer and a bank each see themselves.
+  // Only ever one at a time: showing both together would read as a consultancy's
+  // portfolio, which is exactly what this product is not. A real install has one
+  // estate and never renders this control.
+  const [estate, setEstate] = useState(null)
   const hash = useHashRoute()
 
   useEffect(() => {
@@ -89,6 +94,14 @@ export default function App() {
 
   const disconnect = () => { logout(); window.location.reload() }
   const retry = () => window.location.reload()
+
+  const estates = data ? enterprisesOf(data.scans) : []
+  const current = estate && estates.includes(estate) ? estate : estates[0]
+  // Latest scan per org: the portfolio describes the estate as it stands,
+  // while OrgDetail still gets the full history for its trend.
+  const view = data
+    ? { ...data, scans: latestScans(scansForEnterprise(data.scans, current)) }
+    : null
 
   const orgMatch = hash.match(/^#\/org\/(.+)$/)
   const selected = orgMatch
@@ -154,7 +167,20 @@ export default function App() {
       {error && <div className="state state--error">Failed to load portfolio: {error}</div>}
       {!error && !data && <div className="state">Loading portfolio…</div>}
 
-      {data && !selected && <PortfolioView data={data} />}
+      {data && estates.length > 1 && !selected && (
+        <div className="estates">
+          <span className="estates__label">Estate</span>
+          {estates.map((e) => (
+            <button key={e} className={`estates__pick ${e === current ? 'estates__pick--on' : ''}`}
+                    onClick={() => setEstate(e)}>{e}</button>
+          ))}
+          <span className="estates__note">
+            Demo data. One enterprise at a time — an install sees only its own estate.
+          </span>
+        </div>
+      )}
+
+      {view && !selected && <PortfolioView data={view} />}
       {data && selected && <OrgDetail data={data} scan={selected} />}
 
       <footer className="foot">

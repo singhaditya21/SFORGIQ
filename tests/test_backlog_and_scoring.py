@@ -485,11 +485,17 @@ def test_the_remediation_time_series_still_burns_down(portfolio):
     """Four quarters of one org remediating. A burn-down that ticks up mid-series
     cannot be read, and the mode-aware signals changed what each quarter scores
     on — so this is worth re-checking, not assuming."""
-    helios = sorted((s for s in portfolio if "Helios" in s["scan"]["target_org"]),
-                    key=lambda s: s["scan"]["target_org"])
-    scores = [s["scan"]["composite_score"] for s in helios]
-    assert len(scores) == 4
-    assert scores == sorted(scores), scores
+    # One org, several scans, oldest first. The estate dates its scan ids, so a
+    # burn-down is now an org's own history rather than four look-alike orgs.
+    by_org = {}
+    for s in portfolio:
+        by_org.setdefault(s["scan"]["target_org"], []).append(s)
+    series = [v for v in by_org.values() if len(v) > 1]
+    assert series, "no org carries a scan history to burn down"
+    for runs in series:
+        runs.sort(key=lambda s: s["scan"]["scan_timestamp"])
+        scores = [s["scan"]["composite_score"] for s in runs]
+        assert scores == sorted(scores), (runs[0]["scan"]["target_org"], scores)
 
 
 def test_composite_averages_only_assessed_dimensions():
