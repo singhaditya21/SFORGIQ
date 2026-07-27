@@ -195,7 +195,7 @@ def main():
               "Component_Api_Name__c", "Evidence__c", "Epic__c",
               "Remediation__c", "Acceptance_Criteria__c", "Effort_Points__c", "Effort_Basis__c",
               "Blast_Radius__c", "Source__c", "Emits_To_Backlog__c",
-              "Rule_Maturity__c"]
+              "Rule_Maturity__c", "Owner_Role__c"]
     f_rows = [{
         "External_Finding_Id__c": f["external_finding_id"],
         "Scan__c": scan_id,
@@ -215,6 +215,7 @@ def main():
         "Source__c": f["source"],
         "Emits_To_Backlog__c": _b(f["emits_to_backlog"]),
         "Rule_Maturity__c": f["rule_maturity"],
+                "Owner_Role__c": f.get("owner_role", ""),
     } for f in findings]
     _write_csv(tmp / "findings.csv", f_cols, f_rows)
     print(f"→ upserting {len(f_rows)} findings…")

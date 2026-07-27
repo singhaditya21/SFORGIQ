@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Owner_Role__c</fullName>
+    <description>The role that does this work, derived from the rule and its dimension. A role rather than a person: a name would be wrong in every org but the one it was written for, while a role maps onto whatever that org calls the team. The mapping is judgement and lives in scanner/rubric.json, not in the engine.</description>
+    <inlineHelpText>Which team this finding is for.</inlineHelpText>
+    <label>Owner Role</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

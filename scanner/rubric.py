@@ -67,6 +67,33 @@ ORG_TYPE_FACTOR = {k: tuple(v) for k, v in _E["org_type_factor"].items()}
 GROUP_FACTOR = _E["group_factor"]
 
 
+# --- routing
+_R_ROUTE = _R.get("routing", {})
+ROLES = _R_ROUTE.get("roles", {})
+ROUTE_BY_RULE = _R_ROUTE.get("by_rule", {})
+ROUTE_BY_DIMENSION = _R_ROUTE.get("by_dimension", {})
+UNROUTED = _R_ROUTE.get("unrouted", "Unassigned")
+
+
+def owner_role(rule_id: str, dimension: str = "") -> str:
+    """The role that does this work.
+
+    Rule first, dimension second. The per-rule overrides exist because a
+    dimension groups findings by what they measure, not by who fixes them:
+    D1.CRYPTIC_API_NAME sits with the description rules, but renaming a field
+    safely means clearing formulas, flows, Apex, reports and integrations first,
+    which is a developer's job. Routed to the steward it would simply stall.
+    """
+    if rule_id in ROUTE_BY_RULE:
+        return ROUTE_BY_RULE[rule_id]
+    if dimension in ROUTE_BY_DIMENSION:
+        return ROUTE_BY_DIMENSION[dimension]
+    # Named, not blank. An unrouted finding is a real gap — a rule shipped
+    # without anyone deciding who owns it — and blank would hide it among the
+    # findings that simply have no owner yet.
+    return UNROUTED
+
+
 def play(rule_id: str) -> dict:
     """The playbook entry for a rule, or the generic one.
 

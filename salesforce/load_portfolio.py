@@ -189,7 +189,7 @@ def main():
               "Component_Api_Name__c", "Evidence__c", "Epic__c", "Remediation__c",
               "Acceptance_Criteria__c", "Effort_Points__c", "Effort_Basis__c", "Blast_Radius__c",
               "Source__c", "Emits_To_Backlog__c", "Rule_Maturity__c",
-              "Survived_Scans__c", "Resolved_In_Scan__c"]
+              "Survived_Scans__c", "Resolved_In_Scan__c", "Owner_Role__c"]
     f_rows = []
     for s in scans:
         sid = id_of[s["scan"]["external_scan_id"]]
@@ -207,6 +207,7 @@ def main():
                 "Effort_Basis__c": f.get("effort_basis", "")[:255],
                 "Source__c": f["source"], "Emits_To_Backlog__c": b(f["emits_to_backlog"]),
                 "Rule_Maturity__c": f["rule_maturity"],
+                "Owner_Role__c": f.get("owner_role", ""),
                 # Blank, not 0, when the scan history could not establish a run —
                 # "not measured" and "seen once" must not render alike.
                 "Survived_Scans__c": f.get("survived_scans", ""),

@@ -600,7 +600,8 @@ def test_backlog_columns_are_unchanged():
         "External ID", "Issue Type", "Epic Name", "Epic Link", "Summary",
         "Priority", "Story Points (provisional)", "Labels",
         "Salesforce Component", "Component Type", "Rule ID", "Dimension",
-        "Severity", "Confidence", "Rule Maturity", "Source", "Description",
+        "Severity", "Confidence", "Rule Maturity", "Source", "Owner Role",
+        "Description",
     ]
 
 

@@ -391,6 +391,9 @@ def finding_rows(findings, scan_external_id: str, blast=None,
             # Tool of origin, not the scanned org (that is scan.target_org).
             "source": getattr(f, "source", "") or DEFAULT_FINDING_SOURCE,
             "emits_to_backlog": backlog.emits_to_backlog(f),
+            # Who does it. A backlog of a thousand tickets with no owner is a
+            # list, and the output of this tool is stated to be a backlog.
+            "owner_role": rubric.owner_role(f.rule_id, f.dimension),
             "rule_maturity": "experimental",
             "status": "Open",
         })

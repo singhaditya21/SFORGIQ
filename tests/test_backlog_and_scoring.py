@@ -232,11 +232,24 @@ def test_findings_held_back_by_the_gate_create_neither_an_epic_nor_a_task():
 
 
 def test_epic_link_column_sits_next_to_epic_name():
-    """Jira's importer maps by column, and dashboard/src/lib/data.js hand-writes
-    the same 17 columns. A drift here is invisible until an import mis-maps."""
+    """Jira reads Epic Name off the epic row only and links children through
+    Epic Link, so their order carries meaning an importer acts on."""
     cols = backlog.BACKLOG_COLUMNS
-    assert len(cols) == 17
     assert cols[cols.index("Epic Name") + 1] == "Epic Link"
+
+
+def test_the_dashboard_writes_the_same_columns_in_the_same_order():
+    """dashboard/src/lib/data.js hand-writes this list so the browser can build
+    the same file without the scanner. A count check used to stand in for this —
+    it pinned the length at 17, and would have passed on any two lists of that
+    length in any order. Compare the lists themselves."""
+    import pathlib
+    import re
+    js = (pathlib.Path(__file__).resolve().parents[1]
+          / "dashboard/src/lib/data.js").read_text(encoding="utf-8")
+    block = js[js.index("const BACKLOG_COLUMNS = ["):]
+    block = block[:block.index("]")]
+    assert re.findall(r"'([^']+)'", block) == backlog.BACKLOG_COLUMNS
 
 
 def test_every_rule_has_a_remediation_playbook_entry():

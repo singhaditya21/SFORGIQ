@@ -1,0 +1,19 @@
+{
+  "_readme": [
+    "The orgs the scheduled scan collects from, in order.",
+    "",
+    "Empty is the honest default for this repository: it holds one Salesforce org,",
+    "and that org is the findings store rather than a customer estate. A workflow",
+    "that scanned it anyway would produce a number nobody asked for and call it a",
+    "cadence. .github/workflows/scan.yml therefore skips cleanly when this list is",
+    "empty, and says so, rather than failing or inventing work.",
+    "",
+    "Each entry is an sf CLI alias or username the runner can authenticate as, and",
+    "the display name the scan is recorded under. `enterprise` is the tenant the",
+    "results belong to — every scan lands inside a boundary, so it is required.",
+    "",
+    "  {\"alias\": \"acme-prod\", \"name\": \"Acme · prod\", \"enterprise\": \"ENT-acme\"}"
+  ],
+  "findings_org": "orgiq",
+  "targets": []
+}

@@ -73,7 +73,7 @@ def main():
         "Component_Api_Name__c, Evidence__c, Remediation__c, Epic__c, "
         "Acceptance_Criteria__c, Source__c, Effort_Points__c, Effort_Basis__c, Actual_Effort_Points__c, "
         "Blast_Radius__c, Emits_To_Backlog__c, Rule_Maturity__c, Status__c, "
-        "Survived_Scans__c, Resolved_In_Scan__c "
+        "Survived_Scans__c, Resolved_In_Scan__c, Owner_Role__c "
         "FROM OrgIQ_Finding__c", org)
 
     personas = query(
@@ -124,6 +124,7 @@ def main():
             "status": f["Status__c"],
             # null, not 0, where no scan history could establish a run — the
             # dashboard has to be able to say "not measured" rather than "new".
+            "ownerRole": f["Owner_Role__c"] or "",
             "survivedScans": f["Survived_Scans__c"],
             "resolvedInScan": f["Resolved_In_Scan__c"] or "",
         })

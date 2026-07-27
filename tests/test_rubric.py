@@ -106,3 +106,43 @@ def test_the_effort_model_version_is_the_one_the_rubric_declares():
     another, so the two cannot be allowed to drift apart."""
     assert effort.MODEL_VERSION == rubric.EFFORT_MODEL_VERSION
     assert rubric.EFFORT_MODEL_VERSION in effort.estimate("D1.X", 3).basis
+
+
+# ------------------------------------------------------------- routing
+
+def test_every_rule_routes_to_a_named_role():
+    """A backlog of a thousand tickets with no owner is a list, and this tool's
+    stated output is a backlog. An unrouted rule is a rule that shipped without
+    anyone deciding who fixes what it finds."""
+    import pathlib as _p
+    import re as _re
+    pattern = _re.compile(r"\b(D[1-5]|DRIFT)\.[A-Z][A-Z0-9_]{2,}\b")
+    unrouted = []
+    for rule in sorted(rubric.PLAYBOOK):
+        dim = "Drift" if rule.startswith("DRIFT.") else rule.split(".")[0]
+        if rubric.owner_role(rule, dim) == rubric.UNROUTED:
+            unrouted.append(rule)
+    assert not unrouted, f"no owner decided for: {unrouted}"
+    assert pattern and _p                                    # keep imports honest
+
+
+def test_a_rule_nobody_has_routed_is_named_rather_than_left_blank():
+    """Blank would hide it among the findings that genuinely have no owner yet."""
+    assert rubric.owner_role("D9.NOT_A_RULE", "D9") == rubric.UNROUTED
+    assert rubric.UNROUTED
+
+
+def test_renaming_a_field_goes_to_a_developer_not_a_steward():
+    """The clearest case for routing by rule rather than by dimension:
+    D1.CRYPTIC_API_NAME sits with the description rules, but a safe rename means
+    clearing formulas, flows, Apex, reports and integrations first. Filed under
+    the steward it stalls."""
+    assert rubric.owner_role("D1.MISSING_DESCRIPTION", "D1") == "Data Steward"
+    assert rubric.owner_role("D1.CRYPTIC_API_NAME", "D1") == "Platform Developer"
+
+
+def test_every_role_used_is_one_the_rubric_describes():
+    """A role appearing in the routing table but not in the roles list is a team
+    nobody defined — the ticket would name someone who does not exist."""
+    used = set(rubric.ROUTE_BY_RULE.values()) | set(rubric.ROUTE_BY_DIMENSION.values())
+    assert used <= set(rubric.ROLES), f"undescribed roles: {used - set(rubric.ROLES)}"

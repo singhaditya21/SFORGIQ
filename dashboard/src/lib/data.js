@@ -477,6 +477,23 @@ export function portfolioFindingBreakdown(scans) {
 }
 
 // ---- org-detail derivations --------------------------------------------
+// Who does the work. The output of this tool is a backlog, and a backlog
+// nobody owns is a list — so this is the split that decides whether it can be
+// handed over: four teams, or one person who now has a thousand tickets.
+export function ownerBreakdown(findings) {
+  const by = new Map()
+  for (const f of findings) {
+    if (!f.emitsToBacklog) continue          // observations are not anyone's work yet
+    const role = f.ownerRole || 'Unassigned'
+    const row = by.get(role) || { role, tickets: 0, points: 0, critical: 0 }
+    row.tickets += 1
+    row.points += f.effortPoints || 0
+    if (f.severity === 'Critical') row.critical += 1
+    by.set(role, row)
+  }
+  return [...by.values()].sort((a, b) => b.points - a.points)
+}
+
 export function severityCounts(findings) {
   const c = Object.fromEntries(SEVERITY_ORDER.map((s) => [s, 0]))
   for (const f of findings) c[f.severity] = (c[f.severity] || 0) + 1
@@ -716,6 +733,7 @@ const BACKLOG_COLUMNS = [
   'Confidence',
   'Rule Maturity',
   'Source',
+  'Owner Role',
   'Description',
 ]
 
@@ -917,6 +935,10 @@ function taskRow(scan, f, epicName, epicLink) {
     Confidence: f.confidence,
     'Rule Maturity': f.ruleMaturity || 'experimental',
     Source: findingSourceOf(f),
+    // Comes off the record. The dashboard does not re-derive it: the mapping is
+    // rubric, it lives in scanner/rubric.json, and a second copy here would be a
+    // second thing to keep in step.
+    'Owner Role': f.ownerRole || '',
     Description: backlogDescription(scan, f),
   }
 }
@@ -946,6 +968,10 @@ function epicRow(scan, epic, children) {
     Confidence: epicConfidence(children),
     'Rule Maturity': 'experimental',
     Source: distinct(children.map(findingSourceOf)).join(', '),
+    'Owner Role': (() => {
+      const roles = distinct(children.map((c) => c.ownerRole).filter(Boolean))
+      return roles.length === 1 ? roles[0] : roles.length ? 'Mixed' : ''
+    })(),
     Description: epicDescription(scan, epic, children),
   }
 }

@@ -344,6 +344,7 @@ BACKLOG_COLUMNS = [
     "Confidence",
     "Rule Maturity",
     "Source",            # which engine raised it — OrgIQ, or an ingested tool
+    "Owner Role",        # which team does it — an unassigned backlog is a list
     "Description",
 ]
 
@@ -372,6 +373,7 @@ def _task_row(f, source: str, epic_name: str, epic_link: str) -> dict:
         "Confidence": f.confidence,
         "Rule Maturity": "experimental",
         "Source": _finding_source(f),
+        "Owner Role": rubric.owner_role(f.rule_id, f.dimension),
         "Description": _description(f, source),
     }
 
@@ -401,6 +403,7 @@ def _epic_row(epic: str, children, source: str) -> dict:
         "Confidence": _epic_confidence(children),
         "Rule Maturity": "experimental",
         "Source": ", ".join(_distinct(_finding_source(f) for f in children)),
+        "Owner Role": (lambda rs: rs.pop() if len(rs) == 1 else "Mixed")({rubric.owner_role(c.rule_id, c.dimension) for c in children}),
         "Description": _epic_description(epic, children, source),
     }
 

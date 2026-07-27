@@ -348,5 +348,32 @@
       "remediation": "1. Review the profile or permission set Optimizer flagged and list who actually holds it.\n2. Consolidate overlapping grants and remove the ones no live user or integration needs.\n3. Re-test the agent's own permission set against the tightened model.",
       "acceptance": "A re-run of Optimizer no longer flags this profile or permission set, and the agent's own access is unchanged or narrower."
     }
+  },
+  "routing": {
+    "_why": "Who does the work. A backlog of 1,200 tickets with no owner is a list, and the tool's stated output is a backlog — so routing is part of the deliverable, not a nicety. It is judgement, which is why it lives here and not in the engine: a practitioner who thinks their org routes differently edits this file. Roles, not people: a name would be wrong in every org but the one it was written for, and a role maps onto whatever that org calls the team.",
+    "roles": {
+      "Data Steward": "Owns what a field or record means. Descriptions, naming, duplicates, data quality.",
+      "Platform Developer": "Owns Apex, Flows and triggers — anything where the fix is code or automation.",
+      "Security & Access": "Owns profiles, permission sets and what an identity can reach.",
+      "Release Management": "Owns what differs between orgs on the promotion path."
+    },
+    "by_rule": {
+      "D1.CRYPTIC_API_NAME": "Platform Developer",
+      "D1.SEMANTIC_DUPLICATE": "Platform Developer",
+      "D1.NUMBERED_FAMILY": "Platform Developer",
+      "D1.UNREFERENCED_FIELD": "Platform Developer",
+      "D1.OPTIMIZER_UNUSED_FIELD": "Platform Developer",
+      "D4.HEALTH_CHECK_RISK": "Security & Access",
+      "D4.EXT_SECURITY_VIOLATION": "Platform Developer"
+    },
+    "by_dimension": {
+      "D1": "Data Steward",
+      "D2": "Data Steward",
+      "D3": "Platform Developer",
+      "D4": "Security & Access",
+      "D5": "Platform Developer",
+      "Drift": "Release Management"
+    },
+    "unrouted": "Unassigned"
   }
 }

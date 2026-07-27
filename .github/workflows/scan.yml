@@ -1,0 +1,115 @@
+name: Scheduled readiness scan
+
+# The difference between a report and a product.
+#
+# A readiness assessment run by hand tells you where an org stood on the day
+# someone ran it. This runs on a cadence and fails when the number moves the
+# wrong way — and it is also the only way the history everything else depends on
+# ever comes into existence. Survival counts consecutive scans; a burn-down is a
+# line through them. Neither exists if nothing schedules a scan, which is why the
+# demo has had to fabricate its own history.
+#
+# Targets live in scan-targets.json. With none configured this job skips and says
+# so: this repository's one org is the findings store, not a customer estate, and
+# scanning it anyway would manufacture a cadence rather than have one.
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'          # Mondays, ahead of the keep-alive
+  workflow_dispatch:
+    inputs:
+      fail_on_regression:
+        description: 'Fail the run if any org regressed'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scheduled-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Read the target list
+        id: targets
+        run: |
+          set -euo pipefail
+          n=$(jq '.targets | length' scan-targets.json)
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+          echo "findings_org=$(jq -r '.findings_org' scan-targets.json)" >> "$GITHUB_OUTPUT"
+          if [ "$n" -eq 0 ]; then
+            echo "No scan targets configured — see scan-targets.json." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Install the Salesforce CLI
+        if: steps.targets.outputs.count != '0'
+        run: npm install --global @salesforce/cli
+
+      - name: Authenticate
+        if: steps.targets.outputs.count != '0'
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SFDX_AUTH_URL:-}" ]; then
+            echo "::error::SFDX_AUTH_URL is not set. Run scripts/setup-keepalive.sh once."
+            exit 1
+          fi
+          printf '%s' "$SFDX_AUTH_URL" > /tmp/auth.txt
+          sf org login sfdx-url --sfdx-url-file /tmp/auth.txt \
+            --alias "${{ steps.targets.outputs.findings_org }}" --set-default
+
+      - name: Scan each target and load the result
+        if: steps.targets.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          org=$(jq -r '.findings_org' scan-targets.json)
+          jq -c '.targets[]' scan-targets.json | while read -r t; do
+            alias=$(echo "$t" | jq -r '.alias')
+            name=$(echo "$t" | jq -r '.name')
+            echo "::group::$name"
+            python3 scanner/orgiq_spike.py --mode Org --target-org "$alias" \
+              --name "$name" --scan-json "/tmp/scan-$alias.json" --show 0
+            # load_scan.py reconciles the finding lifecycle and recomputes
+            # survival across this org's whole history, which is the point of
+            # running on a cadence rather than once.
+            python3 salesforce/load_scan.py "/tmp/scan-$alias.json" --target-org "$org"
+            echo "::endgroup::"
+          done
+
+      - name: Did anything get worse?
+        if: steps.targets.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          org=$(jq -r '.findings_org' scan-targets.json)
+          flag=""
+          if [ "${{ github.event.inputs.fail_on_regression != 'false' }}" = "true" ]; then
+            flag="--fail-on-regression"
+          fi
+          python3 scripts/check-regression.py --target-org "$org" $flag \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Refresh the dashboard's bundled data
+        # Runs even when the gate above failed: a regression is exactly when the
+        # dashboard most needs to be showing current numbers, and withholding
+        # them because the news is bad is the wrong way round.
+        if: always() && steps.targets.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          org=$(jq -r '.findings_org' scan-targets.json)
+          python3 dashboard/export_portfolio.py --target-org "$org" \
+            --out dashboard/public/portfolio.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard/public/portfolio.json
+          git commit -m "chore: refresh scan data" || exit 0
+          git push

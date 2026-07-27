@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   portfolioStats, bandBreakdown, portfolioFindingBreakdown, dimensionAverages,
   orgRows, heatmapRows, flattenFindings, applyFindingFilter, groundingEconomics,
-  driftByOrg, personaRows, personaStats, survivalStats, STUCK_SCANS,
+  driftByOrg, personaRows, personaStats, survivalStats, STUCK_SCANS, ownerBreakdown,
   EMPTY_FILTER, findingFilterActive, ruleLabel, BAND_META,
   backlogCsv, downloadCsv,
 } from '../lib/data.js'
@@ -16,6 +16,7 @@ import DimensionAverages from '../components/DimensionAverages.jsx'
 import Heatmap from '../components/Heatmap.jsx'
 import DriftPanel from '../components/DriftPanel.jsx'
 import PersonaPanel from '../components/PersonaPanel.jsx'
+import OwnerSplit from '../components/OwnerSplit.jsx'
 import OrgGrid from '../components/OrgGrid.jsx'
 import OrgsTable from '../components/OrgsTable.jsx'
 import PortfolioFindings from '../components/PortfolioFindings.jsx'
@@ -63,6 +64,9 @@ export default function PortfolioView({ data }) {
   // backlogCsv, but count it here so the button can say what it will hand over
   // and stay dead when the current filter has no tickets in it.
   const gated = useMemo(() => matching.filter((f) => f.emitsToBacklog), [matching])
+  // Over the current drill-down, not the whole portfolio: the question this
+  // answers is "who does the work I am looking at", which changes with the filter.
+  const owners = useMemo(() => ownerBreakdown(matching), [matching])
 
   const onDownload = () => {
     const scanById = new Map(scans.map((s) => [s.scan.externalId, s.scan]))
@@ -169,6 +173,16 @@ export default function PortfolioView({ data }) {
               </span>
             </div>
             <DriftPanel rows={drift} />
+          </section>
+        )}
+
+        {owners.length > 0 && (
+          <section className="card">
+            <div className="card__head">
+              <h2 className="card__title">Who does the work</h2>
+              <span className="card__hint">by effort, not ticket count</span>
+            </div>
+            <OwnerSplit rows={owners} />
           </section>
         )}
 

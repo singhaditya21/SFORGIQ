@@ -354,7 +354,7 @@ async function queryPortfolio(tok) {
     'Severity__c,Confidence__c,Component_Type__c,Component_Api_Name__c,Evidence__c,' +
     'Remediation__c,Effort_Points__c,Blast_Radius__c,Emits_To_Backlog__c,Rule_Maturity__c,' +
     'Status__c,Survived_Scans__c,Resolved_In_Scan__c,Epic__c,Acceptance_Criteria__c,' +
-    'Source__c,Effort_Basis__c,Actual_Effort_Points__c FROM OrgIQ_Finding__c',
+    'Source__c,Effort_Basis__c,Actual_Effort_Points__c,Owner_Role__c FROM OrgIQ_Finding__c',
     'OrgIQ_Finding__c')
   // Live mode has to return the same shape demo mode does, or the dashboard
   // renders less against a real org than it does against the bundled file —
@@ -386,6 +386,7 @@ async function queryPortfolio(tok) {
     source: f.Source__c || '', effortBasis: f.Effort_Basis__c || '',
     actualEffort: f.Actual_Effort_Points__c,
     // null, not 0, where no scan history could establish a run.
+    ownerRole: f.Owner_Role__c || '',
     survivedScans: f.Survived_Scans__c, resolvedInScan: f.Resolved_In_Scan__c || '',
   }))
   const splitList = (t) => (t || '').split(' | ').filter(Boolean)
