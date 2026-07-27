@@ -119,6 +119,12 @@ class RecordStats:
     record_count: int = 0         # rows the ratios were computed over
     sampled_fields: tuple = ()    # fields the fill rate averages
     duplicate_key: str = ""       # field the duplicate probe grouped on
+    # How close to unique that key is (distinct values / rows). A duplicate rate
+    # is only meaningful when the key identifies a business entity; on an object
+    # whose Name is a category — a role, a line-item type, a junction label —
+    # every repeat is correct and the "duplicate rate" measures the vocabulary,
+    # not the data. 1.0 when not measured.
+    key_uniqueness: float = 1.0
     unavailable: tuple = ()       # sub-signals left at their benign default
     notes: tuple = ()             # caveats worth printing next to the numbers
 
@@ -320,6 +326,15 @@ UNAVAILABLE = "unavailable"
 # PRD §7.2.4: below this, a dimension is reported as partially assessed and
 # kept out of the composite. Exposed here so the scan assembler and the
 # dashboard agree on one number.
+# Below this, the field the duplicate probe grouped on cannot be an identifier.
+# A duplicate rate of R implies a uniqueness of roughly 1-R, so a key at 0.5
+# would be claiming that half the org's records are duplicates — which is not a
+# data-quality finding, it is evidence that the key is a category. Measured on
+# a real org, OrgIQ_Persona__c came back at 0.11: 114 rows, 13 role names, zero
+# duplicates, and an 89% "duplicate rate" filed as a High-severity ticket to
+# merge them.
+MIN_KEY_UNIQUENESS = 0.5
+
 COVERAGE_THRESHOLD = 0.70
 
 ASSESSED = "Assessed"

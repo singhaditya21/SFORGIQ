@@ -243,3 +243,39 @@ def test_duplicate_probe_refuses_an_ungroupable_name_field():
 
 def test_soql_literals_are_escaped():
     assert om._q("O'Brien__c") == "O\\'Brien__c"
+
+
+# ----------------------------------- the duplicate probe pulls no record data
+
+def test_the_duplicate_probe_never_selects_the_value_it_groups_on():
+    """It used to run `SELECT Name k, COUNT(Id) c ... GROUP BY Name`, and `k`
+    was discarded — so account names and policy numbers crossed the API for a
+    number that never used them. `SELECT COUNT(Id) c ... GROUP BY Name` returns
+    the identical answer, verified against a live org.
+
+    Asserted on the source, because there is no other way to catch it: the fix
+    changes nothing in the output, so a future edit that re-added the column
+    would be invisible to every behavioural test."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scanner/org_mode.py").read_text(encoding="utf-8")
+    body = src[src.index("def collect_record_stats"):]
+    body = body[:body.index("\ndef ")]
+
+    assert "GROUP BY" in body, "the duplicate probe is gone — this test is vacuous"
+    assert '"SELECT COUNT(Id) c FROM "' in body, \
+        "the duplicate aggregate no longer projects counts alone"
+    assert '"SELECT " + dup_key' not in body, \
+        "the grouped value is being selected again"
+    # The uniqueness probe is an aggregate too — COUNT_DISTINCT returns a number,
+    # never the values it counted.
+    assert "COUNT_DISTINCT" in body
+
+
+def test_record_stats_carry_the_uniqueness_of_the_key_they_grouped_on():
+    """Without it the duplicate rate is a number with no way to tell whether the
+    key it came from means anything."""
+    import metadata as md
+    s = md.RecordStats(object_name="X__c")
+    assert s.key_uniqueness == 1.0            # not measured reads as trusted
+    assert md.MIN_KEY_UNIQUENESS < 1.0

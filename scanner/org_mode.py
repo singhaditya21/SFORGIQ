@@ -940,7 +940,7 @@ def collect_record_stats(client: _Client, objects, sample_fields: int = FILL_SAM
             notes.append("staleness query failed — " + str(exc))
 
         # -- duplicates
-        dup, dup_key = 0.0, _dup_key(desc)
+        dup, dup_key, uniq = 0.0, _dup_key(desc), 1.0
         if not dup_key:
             unavailable.append("duplicate_rate")
             notes.append("the Name field is not groupable (auto-number or "
@@ -951,18 +951,51 @@ def collect_record_stats(client: _Client, objects, sample_fields: int = FILL_SAM
                          + "-record ceiling for a full-table GROUP BY; probe skipped")
         else:
             try:
-                rows = client.rows(
-                    "SELECT " + dup_key + " k, COUNT(Id) c FROM " + obj
-                    + " GROUP BY " + dup_key + " HAVING COUNT(Id) > 1 LIMIT "
-                    + str(DUP_GROUP_LIMIT))
-                surplus = sum(int(r.get("c") or 0) - 1 for r in rows)
-                dup = surplus / float(total)
-                if len(rows) >= DUP_GROUP_LIMIT:
-                    notes.append("duplicate groups truncated at " + str(DUP_GROUP_LIMIT)
-                                 + "; the rate is a floor")
+                # Is this key an identifier at all?
+                #
+                # The probe assumes that two records sharing a Name are probably
+                # the same thing. That holds for an Account and fails completely
+                # for an object whose Name is a category — a role, a line-item
+                # type, a junction label — where every repeat is correct. Run
+                # against a real org, OrgIQ_Persona__c reported an 89% duplicate
+                # rate: 114 rows, 13 role names, zero duplicates, and a
+                # High-severity ticket telling someone to merge them.
+                #
+                # One aggregate settles it, before any grouping is done.
+                head = client.rows("SELECT COUNT_DISTINCT(" + dup_key + ") d FROM " + obj)
+                distinct = int((head[0] if head else {}).get("d") or 0)
+                uniq = (distinct / float(total)) if total else 1.0
             except SfError as exc:
+                distinct, uniq = 0, 1.0
                 unavailable.append("duplicate_rate")
-                notes.append("duplicate aggregate failed — " + str(exc))
+                notes.append("key-uniqueness probe failed — " + str(exc))
+
+            if "duplicate_rate" in unavailable:
+                pass
+            elif uniq < md.MIN_KEY_UNIQUENESS:
+                unavailable.append("duplicate_rate")
+                notes.append(str(distinct) + " distinct " + dup_key + " value(s) across "
+                             + str(total) + " record(s) — this object's name is a "
+                             "category, not an identifier, so repeats are correct "
+                             "and no duplicate signal can be read from it")
+            else:
+                try:
+                    # The grouped VALUE is deliberately not selected. Only the
+                    # counts are needed, and `SELECT Name k, COUNT(Id) c` pulled
+                    # customer names — account names, policy numbers — across the
+                    # API for a number that never used them.
+                    rows = client.rows(
+                        "SELECT COUNT(Id) c FROM " + obj
+                        + " GROUP BY " + dup_key + " HAVING COUNT(Id) > 1 LIMIT "
+                        + str(DUP_GROUP_LIMIT))
+                    surplus = sum(int(r.get("c") or 0) - 1 for r in rows)
+                    dup = surplus / float(total)
+                    if len(rows) >= DUP_GROUP_LIMIT:
+                        notes.append("duplicate groups truncated at " + str(DUP_GROUP_LIMIT)
+                                     + "; the rate is a floor")
+                except SfError as exc:
+                    unavailable.append("duplicate_rate")
+                    notes.append("duplicate aggregate failed — " + str(exc))
 
         if len(unavailable) == 3:
             # Nothing was measured. Emitting a RecordStats here would put three
@@ -973,6 +1006,7 @@ def collect_record_stats(client: _Client, objects, sample_fields: int = FILL_SAM
         stats.append(md.RecordStats(
             object_name=obj, fill_rate=fill, stale_ratio=stale, duplicate_rate=dup,
             record_count=total, sampled_fields=tuple(probed), duplicate_key=dup_key,
+            key_uniqueness=uniq,
             unavailable=tuple(unavailable), notes=tuple(notes),
         ))
 

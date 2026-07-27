@@ -42,7 +42,15 @@ def d2_data_foundation(stats) -> list:
         if s.stale_ratio > STALE_CEIL:
             out.append(_f("D2.STALE_DATA", "D2", "Medium", "Medium", s.object_name,
                           f"{s.stale_ratio * 100:.0f}% of records not updated in 24 months"))
-        if s.duplicate_rate > DUP_CEIL:
+        # A duplicate rate is only a claim about the data when the key it was
+        # grouped on identifies a business entity. Where the object's name is a
+        # category — a role, a line-item type, a junction label — every repeat is
+        # correct, and the collector says so by reporting a uniqueness below the
+        # threshold. Guarded here as well as at collection: this rule is what
+        # emits a High-severity ticket telling someone to merge records, and a
+        # stat arriving from anywhere else must not be able to trigger it.
+        if (s.duplicate_rate > DUP_CEIL
+                and getattr(s, "key_uniqueness", 1.0) >= md.MIN_KEY_UNIQUENESS):
             out.append(_f("D2.DUPLICATE_RECORDS", "D2",
                           "High" if s.duplicate_rate > 0.15 else "Medium", "Medium",
                           s.object_name,
