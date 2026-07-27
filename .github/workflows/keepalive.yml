@@ -80,7 +80,15 @@ jobs:
           fi
           echo "Keep-alive login recorded for org: $name"
 
+      # Runs even when the login above failed, and deliberately so. The two
+      # steps defend against two unrelated clocks: Salesforce deletes the org
+      # after ~45 days without a login, and GitHub disables a scheduled workflow
+      # after 60 days without repo activity. Chaining them meant a dead
+      # Salesforce token also stopped the heartbeat, so a fixable auth problem
+      # quietly took the scheduler down with it — and the workflow that was
+      # supposed to report the failure every week stopped running at all.
       - name: Heartbeat commit (keeps the scheduler alive)
+        if: always()
         run: |
           mkdir -p ops
           date -u +%FT%TZ > ops/last-keepalive.txt
