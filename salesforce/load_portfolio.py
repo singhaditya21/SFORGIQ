@@ -9,7 +9,11 @@ job per object — fast even for a couple thousand findings.
 The portfolio JSON is {"scans": [ {scan, dimensions, findings}, ... ]}.
 
 Because every record is deleted and re-inserted, there is no finding lifecycle
-to reconcile here and nothing human to preserve — that is load_scan.py's job.
+to reconcile here — that is load_scan.py's job. It also means anything a human
+recorded against these findings is destroyed: triage status, effort actuals, and
+rule verdicts. That is correct for a demo portfolio, which is regenerated whole,
+and would be wrong for a real estate — which is why a real scan goes through
+load_scan.py, whose upsert never sends those fields at all.
 Status__c is left to its picklist default (Open) so the two loaders agree on
 where a fresh finding starts.
 """

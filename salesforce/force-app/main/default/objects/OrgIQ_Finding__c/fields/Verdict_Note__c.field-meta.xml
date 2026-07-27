@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Verdict_Note__c</fullName>
+    <description>Why, in the reviewer's words. This is the field that improves the rules: a precision number says which rule is wrong, and only the note says what it got wrong. Most valuable on a False Positive, and worth recording on a surprising True Positive too.</description>
+    <label>Verdict Note</label>
+    <length>1000</length>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

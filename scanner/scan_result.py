@@ -394,7 +394,10 @@ def finding_rows(findings, scan_external_id: str, blast=None,
             # Who does it. A backlog of a thousand tickets with no owner is a
             # list, and the output of this tool is stated to be a backlog.
             "owner_role": rubric.owner_role(f.rule_id, f.dimension),
-            "rule_maturity": "experimental",
+            # From the rubric, which carries whatever precision has actually
+            # been measured for this rule. Hardcoded "experimental" until now —
+            # so the ladder existed in the schema and nothing could ever climb it.
+            "rule_maturity": rubric.maturity_for(f.rule_id),
             "status": "Open",
         })
     return rows

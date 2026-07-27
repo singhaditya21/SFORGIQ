@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Verdict__c</fullName>
+    <description>Was this finding correct? Deliberately separate from Status__c, which answers whether anyone will act on it. A finding can be right and not worth fixing (Status Suppressed), and it can be wrong (Verdict False Positive) — folding those into one field is why no rule has ever had a measured precision. Only this field moves a rule up the maturity ladder.</description>
+    <inlineHelpText>Was the finding itself correct? Not whether you plan to fix it.</inlineHelpText>
+    <label>Verdict</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value><fullName>True Positive</fullName><default>false</default><label>True Positive</label></value>
+            <value><fullName>False Positive</fullName><default>false</default><label>False Positive</label></value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

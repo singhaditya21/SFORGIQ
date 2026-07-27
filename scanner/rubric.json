@@ -375,5 +375,24 @@
       "Drift": "Release Management"
     },
     "unrouted": "Unassigned"
+  },
+  "validation": {
+    "_why": "What a rule has earned the right to claim. The maturity ladder — experimental, validated, field-proven — has been in the schema since the first commit and every finding shipped as 'experimental', because nothing measured precision. These thresholds are what let a rule move, and they are judgement, so they live here.\nPrecision is TP / (TP + FP): was the finding correct. It is deliberately not the same question as whether anyone will act on it — Status__c already answers that with Suppressed, and a rule can be perfectly precise and still not worth shipping if every correct finding is one nobody intends to fix. Both are reported; only precision moves the ladder.",
+    "min_verdicts": 10,
+    "ladder": [
+      {
+        "maturity": "field-proven",
+        "min_precision": 0.95,
+        "min_verdicts": 50
+      },
+      {
+        "maturity": "validated",
+        "min_precision": 0.85,
+        "min_verdicts": 20
+      }
+    ],
+    "default_maturity": "experimental",
+    "withdraw_below": 0.6,
+    "measured": {}
   }
 }

@@ -73,6 +73,15 @@ Today the PRD describes a rule maturity ladder and a three-tier validation model
 Neither has been exercised: every rule ships as `experimental` and no rule has a
 measured precision. This phase makes the ladder real.
 
+**The route exists.** `salesforce/precision_kit.py` is the same shape as the
+effort calibration kit: a stratified worksheet, an import matched on the External
+ID the backlog already carries, and a per-rule report. `Verdict__c` answers "was
+this correct" and is deliberately separate from `Status__c`, which answers "will
+anyone act on it" — a rule can be perfectly precise and still not worth shipping.
+Measured precision is written back into `rubric.json`, which is where the scanner
+reads `Rule_Maturity__c` from, so scoring findings is the only thing that moves a
+rule up the ladder. What is missing is not plumbing. It is orgs.
+
 1. **Assemble a validation corpus.** Ten to twenty real orgs across industries and
    ages — partner sandboxes, Trailhead playgrounds, friendly customers, the
    consultancy's own estate. Source mode alone gets most of it; org mode where

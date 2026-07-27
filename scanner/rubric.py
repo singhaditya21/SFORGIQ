@@ -75,6 +75,27 @@ ROUTE_BY_DIMENSION = _R_ROUTE.get("by_dimension", {})
 UNROUTED = _R_ROUTE.get("unrouted", "Unassigned")
 
 
+# --- validation / rule maturity
+_R_VAL = _R.get("validation", {})
+MIN_VERDICTS = _R_VAL.get("min_verdicts", 10)
+MATURITY_LADDER = _R_VAL.get("ladder", [])
+DEFAULT_MATURITY = _R_VAL.get("default_maturity", "experimental")
+WITHDRAW_BELOW = _R_VAL.get("withdraw_below", 0.6)
+MEASURED = _R_VAL.get("measured", {})
+
+
+def maturity_for(rule_id: str) -> str:
+    """What this rule has earned the right to claim.
+
+    Reads the measurement written back by the precision kit. With none — the
+    state every rule is in until someone scores real findings — it returns the
+    default, which is exactly what the hardcoded value used to say. The
+    difference is that it can now change without editing Python, and that the
+    ladder in the schema finally means something.
+    """
+    return (MEASURED.get(rule_id) or {}).get("maturity", DEFAULT_MATURITY)
+
+
 def owner_role(rule_id: str, dimension: str = "") -> str:
     """The role that does this work.
 
