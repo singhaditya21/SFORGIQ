@@ -12,8 +12,9 @@ parses files in an SFDX directory. There is no org connection anywhere in
 result, nothing more — see [What the scanner actually reads](#what-the-scanner-actually-reads).
 
 **Live dashboard:** https://singhaditya21.github.io/SFORGIQ/ — demo mode, reading a
-bundled JSON export of a **synthetic** 24-org portfolio. The rules that produced it
-are the real ones; the orgs they ran against are generated.
+bundled JSON export of a **synthetic** two-enterprise estate — an insurer and a
+bank, 14 orgs between them. The rules that produced it are the real ones; the orgs
+they ran against are generated.
 
 ---
 
@@ -33,16 +34,25 @@ console entry point. Invoke the module directly, as above.
 
 ## Current state
 
+Every count below is computed by `scripts/repo_facts.py` and asserted by
+`tests/test_docs.py`, because this table has now gone stale twice — most
+recently claiming 22 rules when there were 31, and claiming the scanner could
+not read an org while `scanner/org_mode.py` was issuing real SOQL against one.
+
 | Piece | Status |
 |---|---|
-| Specification (`PRD.md`) | v0.7 — complete, 13 sections + 3 appendices |
-| Scanner (`scanner/`) | **22 rules** across **D1–D5** (6 × D1, 3 × D2, 4 × D3, 4 × D4, 5 × D5). D1/D3/D4/D5 run on metadata parsed from SFDX files. **D2's three rules have never run on real input** — they need record-level data, which no repository carries |
-| Tests / CI | 39 pytest tests over the rule packs + scoring, plus an end-to-end fixture smoke test; CI also builds the dashboard. **20 of the 22 rules have a test**; `D1.UNREFERENCED_FIELD`, `D4.VIEW_ALL_DATA`, `scanner/density.py` and the report/dashboard parser do not yet |
-| Data generator (`fixtures/`) | Working. CSV generator, messy-org fixture (3 objects, 42 fields, 7 reports, 2 dashboards), and a 24-org portfolio generator |
-| Salesforce objects (`salesforce/`) | 3 objects, **38 fields** in source + `OrgIQ_Admin` permission set, Connected App, CORS origin, `Security.settings`. **32 fields were deployed to `orgiq` and confirmed**; the 6 added since (Epic, Acceptance Criteria, Source, Semantic Density, Est. Grounding/Remediated Tokens) have not been redeployed |
-| Salesforce data | **Loaded & confirmed**, but the portfolio is **synthetic** — 24 scans, 120 dimension scores, 1,976 findings across D1–D5 (~4 of the DE org's 5 MB) |
-| Backlog CSV output | Working. Threshold-gated Jira CSV, remediation + provisional effort points |
-| Dashboard (`dashboard/`) | **Live on GitHub Pages in demo mode.** Portfolio overview + per-org drill-down (radar, trend, backlog). OAuth live mode is written end to end but **has not been observed to complete** — see [Traps](#traps-that-will-bite-a-fresh-clone). Live mode needs a login in the OrgIQ org **and** the `OrgIQ_Admin` permission set; short of either, the dashboard now says which one is missing instead of quietly reverting to demo data — see [Giving someone else access to live mode](#giving-someone-else-access-to-live-mode) |
+| Specification (`PRD.md`) | v0.9 — 13 sections + 3 appendices |
+| Scanner (`scanner/`) | **31 rules** across **D1–D5** (7 × D1, 3 × D2, 5 × D3, 10 × D4, 6 × D5), plus cross-org drift, which is reported outside the five dimensions so it never penalises a score |
+| Modes | **Source and Org are both real.** Source mode parses an SFDX directory. Org mode (`scanner/org_mode.py`, ~1,200 lines) authenticates through the `sf` CLI and collects field schema, Flows, Apex, triggers, permission sets, reports and **record-level probes** — the last of which is what lets D2 run at all |
+| Free-tool ingestion | **Built** (`scanner/external.py`, ~1,100 lines). Code Analyzer (v4/v5/SARIF, and it can invoke the CLI itself), Security Health Check, and an Optimizer export — each finding carries its source, and overlaps with OrgIQ's own rules are deduplicated rather than double-counted |
+| Personas | Profiles, layouts, flows, approvals and validation rules are read together into a **capability surface** per identity, stored as `OrgIQ_Persona__c` and shown in the dashboard |
+| Tests / CI | **234 pytest tests** over the rule packs, scoring, drift, personas, effort, survival and the rubric, plus an end-to-end fixture smoke test; CI also builds the dashboard. **every one of the 31 rules has a test**, and `tests/test_rubric.py` fails if a rule ever ships without a remediation playbook |
+| Data generator (`fixtures/`) | CSV generator, messy-org fixture, and the estate generator behind the demo portfolio |
+| Salesforce objects (`salesforce/`) | **5 objects, 72 fields**, all deployed to `orgiq` and confirmed by query, plus the `OrgIQ_Admin` permission set, Connected App, CORS origin and `Security.settings` |
+| Salesforce data | **Loaded and confirmed in the org.** The portfolio is synthetic: **2 enterprises, 14 orgs, 20 scans, 1,365 findings, 100 dimension scores, 110 persona surfaces** |
+| Backlog CSV output | Threshold-gated Jira CSV — **1,250 tickets** from the current portfolio, epic-clustered, with remediation and acceptance criteria |
+| Effort model | Responds to measured evidence (dependants, cluster size, org type) and is **explicitly uncalibrated** — `salesforce/calibration_kit.py` is the route real numbers arrive by |
+| Dashboard (`dashboard/`) | **Live on GitHub Pages in demo mode.** OAuth live mode: every server-side precondition is verified by `scripts/verify-live-mode.py` (11 checks, all passing). **The browser login itself has not been observed to complete** — that needs a person, and live mode also needs the `OrgIQ_Admin` permission set, without which a successful sign-in still shows nothing |
 
 **Environment done:** Salesforce CLI installed (macOS arm64), Developer Edition org
 created, `sf org login web --alias orgiq` complete.
@@ -50,10 +60,15 @@ created, `sf org login web --alias orgiq` complete.
 **Keeping it alive.** GitHub Pages is static and effectively always-up; the public
 dashboard's demo mode reads a bundled JSON, so it stays live even if the org is
 gone. The one perishable piece is the **Agentforce dev org**, which Salesforce
-deletes after ~45 days without a login. `.github/workflows/keepalive.yml` logs in
-weekly (and writes a heartbeat commit so GitHub never disables the scheduler), so
-nothing ever has to be done by hand. One-time setup: `bash scripts/setup-keepalive.sh`
-to store the `SFDX_AUTH_URL` secret.
+deletes after ~45 days without a login. `.github/workflows/keepalive.yml` performs
+that login weekly and writes a heartbeat commit so GitHub never disables the
+scheduler — the two run independently, because they defend against two unrelated
+clocks and chaining them once let a dead token take the scheduler down too.
+
+One-time setup: `bash scripts/setup-keepalive.sh`, which now proves the refresh
+token works *before* storing it. **It is currently not set up**: the stored token
+expired, and Salesforce will not issue a refresh token to a script, so this needs
+one `sf org login web --alias orgiq` followed by the setup script.
 
 ---
 
@@ -83,8 +98,10 @@ generated.
 
 ## What the scanner actually reads
 
-Source mode is the only mode. `scanner/` walks the directory you point it at with
-`Path.rglob` and parses exactly these patterns — nothing else in the tree is opened:
+**In source mode** `scanner/` walks the directory you point it at with `Path.rglob`
+and parses exactly these patterns — nothing else in the tree is opened. Org mode
+collects the same shapes from a live org over the API instead, so the table below
+is what the *rules* consume either way:
 
 | Glob | Parsed by | Feeds |
 |---|---|---|
@@ -122,15 +139,18 @@ rules cap their own confidence, and the reason `D1.UNREFERENCED_FIELD` returns n
 at all unless report or dashboard metadata was found — with no evidence of consumption,
 an unused field and an unobserved field look identical.
 
-**`--mode` is a label, not a connection.** `orgiq_spike.py --mode Org|Hybrid` changes
-exactly one thing: the string written to `scan.scan_mode`, which becomes
-`OrgIQ_Scan__c.Scan_Mode__c` and a filter chip in the dashboard. It does not
-authenticate, query or read anything from an org, and no rule behaves differently
-because of it. The demo portfolio's 12 `Org` and 3 `Hybrid` scans are generated in
-memory by `scanner/scan_portfolio.py` and carry those labels for realism. No code path
-in this repository reads a *target* org; the only org traffic anywhere is the `sf` CLI
-writing to and reading from the separate OrgIQ findings org (`salesforce/load_*.py`,
-`dashboard/export_*.py`).
+**Both modes are real, and they differ in what they can see.** Source mode parses
+a directory: no authentication, no org traffic, and D2 cannot run because no
+repository carries record counts. Org mode (`--mode Org`) authenticates through
+the `sf` CLI and collects the same metadata from a live org *plus* record-level
+probes — fill rates, staleness, and a duplicate probe where something groupable
+exists — which is what lets D2 report anything at all. Where a probe cannot run,
+the collector records why, and the dimension is reported as partially assessed
+rather than silently scored on what did run.
+
+Reading a *target* org is read-only by design. The only writes anywhere are to
+the separate OrgIQ findings org, which is where results are stored
+(`salesforce/load_*.py`, `dashboard/export_*.py`).
 
 ---
 
@@ -447,7 +467,7 @@ SFORGIQ/
 **End-to-end run** (portfolio → Salesforce → dashboard data):
 
 ```
-# generate a 24-org portfolio and bulk-load it into the org
+# generate the demo estate and bulk-load it into the org
 python3 scanner/scan_portfolio.py --out portfolio.json
 python3 salesforce/load_portfolio.py portfolio.json --target-org orgiq
 # export it back out for the dashboard's demo mode

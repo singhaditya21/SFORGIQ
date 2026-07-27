@@ -55,6 +55,26 @@ def test_d4_modify_all_data_is_critical():
     assert out[0].severity == "Critical"
 
 
+def test_d4_view_all_data_is_high_but_not_critical():
+    """Read-everywhere and write-everywhere are not the same finding. An agent
+    that can read every record leaks; one that can write every record destroys,
+    and collapsing the two would either understate Modify All or make every
+    reporting-style permission set look like an emergency."""
+    ps = md.PermissionSetMeta(api_name="Reporting", user_permissions=["ViewAllData"])
+    out = rx.d4_blast_radius([ps])
+    assert [f.rule_id for f in out] == ["D4.VIEW_ALL_DATA"]
+    assert out[0].severity == "High" and out[0].confidence == "High"
+
+
+def test_d4_reports_both_blanket_permissions_when_both_are_granted():
+    """They are separate grants and either can be revoked without the other, so
+    a persona holding both produces two tickets rather than one."""
+    ps = md.PermissionSetMeta(api_name="Admin",
+                              user_permissions=["ModifyAllData", "ViewAllData"])
+    assert sorted(f.rule_id for f in rx.d4_blast_radius([ps])) == [
+        "D4.MODIFY_ALL_DATA", "D4.VIEW_ALL_DATA"]
+
+
 def test_d4_object_level_breadth():
     ps = md.PermissionSetMeta(api_name="Agent", object_perms=[
         md.ObjectPerm("Account", allow_edit=True, modify_all=True),

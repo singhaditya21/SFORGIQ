@@ -329,7 +329,9 @@ async function queryPortfolio(tok) {
   const scans = await soql(tok,
     'SELECT Name,External_Scan_Id__c,Target_Org__c,Scan_Mode__c,Rubric_Version__c,' +
     'Composite_Score__c,Readiness_Band__c,Components_Scanned__c,Gate_Applied__c,' +
-    'Gate_Reason__c,Scan_Timestamp__c FROM OrgIQ_Scan__c ORDER BY Composite_Score__c ASC',
+    'Gate_Reason__c,Scan_Timestamp__c,Semantic_Density__c,Est_Grounding_Tokens__c,' +
+    'Est_Remediated_Tokens__c,Removable_Restating__c,Removable_Duplicates__c,' +
+    'Removable_Unreferenced__c FROM OrgIQ_Scan__c ORDER BY Composite_Score__c ASC',
     'OrgIQ_Scan__c')
   // Nothing to hang findings off, and two more queries would only be able to
   // confirm it. The caller works out *why* it is empty.
@@ -343,7 +345,8 @@ async function queryPortfolio(tok) {
     'SELECT Scan__r.External_Scan_Id__c,External_Finding_Id__c,Rule_Id__c,Dimension__c,' +
     'Severity__c,Confidence__c,Component_Type__c,Component_Api_Name__c,Evidence__c,' +
     'Remediation__c,Effort_Points__c,Blast_Radius__c,Emits_To_Backlog__c,Rule_Maturity__c,' +
-    'Status__c,Survived_Scans__c,Resolved_In_Scan__c FROM OrgIQ_Finding__c',
+    'Status__c,Survived_Scans__c,Resolved_In_Scan__c,Epic__c,Acceptance_Criteria__c,' +
+    'Source__c,Effort_Basis__c,Actual_Effort_Points__c FROM OrgIQ_Finding__c',
     'OrgIQ_Finding__c')
   // Live mode has to return the same shape demo mode does, or the dashboard
   // renders less against a real org than it does against the bundled file —
@@ -368,6 +371,12 @@ async function queryPortfolio(tok) {
     remediation: f.Remediation__c || '', effortPoints: f.Effort_Points__c,
     blastRadius: f.Blast_Radius__c, emitsToBacklog: f.Emits_To_Backlog__c,
     ruleMaturity: f.Rule_Maturity__c, status: f.Status__c,
+    // Blank rather than a default: the dashboard's RULE_META mirror is the
+    // fallback, and an invented value here would hide a finding that predates
+    // these fields.
+    epic: f.Epic__c || '', acceptanceCriteria: f.Acceptance_Criteria__c || '',
+    source: f.Source__c || '', effortBasis: f.Effort_Basis__c || '',
+    actualEffort: f.Actual_Effort_Points__c,
     // null, not 0, where no scan history could establish a run.
     survivedScans: f.Survived_Scans__c, resolvedInScan: f.Resolved_In_Scan__c || '',
   }))
@@ -394,6 +403,17 @@ async function queryPortfolio(tok) {
           rubricVersion: s.Rubric_Version__c, compositeScore: s.Composite_Score__c,
           readinessBand: s.Readiness_Band__c, componentsScanned: s.Components_Scanned__c,
           gateApplied: s.Gate_Applied__c, gateReason: s.Gate_Reason__c || '', timestamp: s.Scan_Timestamp__c,
+          // Percent(3,1) in the org — 42.5 means 42.5% — while everything
+          // downstream speaks the 0-1 share. Converted once, here, exactly as
+          // export_portfolio.py does for demo mode.
+          semanticDensity: s.Semantic_Density__c == null ? null : s.Semantic_Density__c / 100,
+          estGroundingTokens: s.Est_Grounding_Tokens__c,
+          estRemediatedTokens: s.Est_Remediated_Tokens__c,
+          estRemovableTokens: {
+            restating_descriptions: s.Removable_Restating__c || 0,
+            duplicate_clusters: s.Removable_Duplicates__c || 0,
+            unreferenced_fields: s.Removable_Unreferenced__c || 0,
+          },
         },
         dimensions: (dByScan[sid] || []).sort((a, b) => a.code.localeCompare(b.code)),
         findings: fByScan[sid] || [],
