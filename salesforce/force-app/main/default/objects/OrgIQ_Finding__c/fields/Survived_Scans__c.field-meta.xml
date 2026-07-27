@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Survived_Scans__c</fullName>
+    <description>How many consecutive scans of this org have reported this same defect, counting this one. It is elapsed evidence, not effort: a finding on its sixth scan is one nobody is fixing, which is worth knowing whether or not anyone ever records what a fix costs.</description>
+    <inlineHelpText>Consecutive scans this finding has appeared in, including this one.</inlineHelpText>
+    <label>Survived Scans</label>
+    <precision>4</precision>
+    <scale>0</scale>
+    <required>false</required>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

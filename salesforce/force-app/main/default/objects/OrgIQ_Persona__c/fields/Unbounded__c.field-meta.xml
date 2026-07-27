@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Unbounded__c</fullName>
+    <description>Grants Modify All Data or View All Data, so its reach is every record of every object regardless of sharing. Not a wide persona — an unbounded one, which is a different thing.</description>
+    <label>Unbounded</label>
+    <defaultValue>false</defaultValue>
+    <type>Checkbox</type>
+</CustomField>

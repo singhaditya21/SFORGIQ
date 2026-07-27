@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>External_Persona_Id__c</fullName>
+    <description>Deterministic id, scoped to the scan, so a reload updates a persona rather than duplicating it. Scoped to the scan for the same reason a finding id is: a persona record is what one scan saw, not a standing fact about the org.</description>
+    <externalId>true</externalId>
+    <label>External Persona Id</label>
+    <length>120</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

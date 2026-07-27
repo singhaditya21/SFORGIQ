@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Scan__c</fullName>
+    <description>The scan that reconstructed this surface.</description>
+    <label>Scan</label>
+    <referenceTo>OrgIQ_Scan__c</referenceTo>
+    <relationshipLabel>Personas</relationshipLabel>
+    <relationshipName>Personas</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>

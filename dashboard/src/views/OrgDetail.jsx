@@ -1,4 +1,5 @@
 import { familyOf, componentRollup, backlogCsv, downloadCsv } from '../lib/data.js'
+import PersonaPanel from '../components/PersonaPanel.jsx'
 import ReadinessHero from '../components/ReadinessHero.jsx'
 import DimensionGrid from '../components/DimensionGrid.jsx'
 import BacklogSummary from '../components/BacklogSummary.jsx'
@@ -142,6 +143,20 @@ export default function OrgDetail({ data, scan }) {
                 </div>
               </div>
             )}
+          </section>
+        )}
+
+        {(scan.personas || []).length > 0 && (
+          <section className="card card--wide">
+            <div className="card__head">
+              <h2 className="card__title">What each identity can actually do</h2>
+              <span className="card__hint">
+                {scan.personas.length} personas in this org · click a row to expand
+              </span>
+            </div>
+            {/* No org column: every row here is this org. */}
+            <PersonaPanel rows={scan.personas.map((p) => ({ ...p, scanId: s.externalId }))}
+                          showOrg={false} />
           </section>
         )}
 

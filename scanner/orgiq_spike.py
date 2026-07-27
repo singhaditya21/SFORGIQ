@@ -1050,6 +1050,11 @@ def main():
 
     if a.scan_json:
         import persona as persona_mod
+        # Built once and used twice: the blast index counts them, and the scan
+        # keeps them. Building them twice would be the same work and, worse, two
+        # places for the surface a reviewer reads to diverge from the one the
+        # dependency counts were taken from.
+        personas = persona_mod.build_personas(evidence.meta)
         result = scan_result.build(evidence.fields, findings, source,
                                    scan_mode=evidence.mode,
                                    assessed_dims=evidence.assessed_dims,
@@ -1060,7 +1065,9 @@ def main():
                                    # on each component — the number that lets a
                                    # backlog be ordered by consequence, not only
                                    # by severity.
-                                   blast=persona_mod.blast_index(evidence.meta))
+                                   blast=persona_mod.blast_index(evidence.meta,
+                                                                 personas),
+                                   personas=personas)
         scan_result.write_json(result, a.scan_json)
         s = result["scan"]
         partial = [d["dimension"][:2] for d in result["dimensions"]

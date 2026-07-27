@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 
 SCAN, FINDING, DIM = "OrgIQ_Scan__c", "OrgIQ_Finding__c", "OrgIQ_Dimension_Score__c"
+PERSONA = "OrgIQ_Persona__c"
 TARGET_ORG = "OrgIQ_Target_Org__c"
 
 
@@ -152,7 +153,8 @@ def main():
               "Severity__c", "Confidence__c", "Component_Type__c",
               "Component_Api_Name__c", "Evidence__c", "Epic__c", "Remediation__c",
               "Acceptance_Criteria__c", "Effort_Points__c", "Effort_Basis__c", "Blast_Radius__c",
-              "Source__c", "Emits_To_Backlog__c", "Rule_Maturity__c"]
+              "Source__c", "Emits_To_Backlog__c", "Rule_Maturity__c",
+              "Survived_Scans__c", "Resolved_In_Scan__c"]
     f_rows = []
     for s in scans:
         sid = id_of[s["scan"]["external_scan_id"]]
@@ -170,6 +172,10 @@ def main():
                 "Effort_Basis__c": f.get("effort_basis", "")[:255],
                 "Source__c": f["source"], "Emits_To_Backlog__c": b(f["emits_to_backlog"]),
                 "Rule_Maturity__c": f["rule_maturity"],
+                # Blank, not 0, when the scan history could not establish a run —
+                # "not measured" and "seen once" must not render alike.
+                "Survived_Scans__c": f.get("survived_scans", ""),
+                "Resolved_In_Scan__c": f.get("resolved_in_scan", ""),
             })
     write_csv(tmp / "findings.csv", f_cols, f_rows)
     print(f"→ inserting {len(f_rows)} findings…")
@@ -196,8 +202,48 @@ def main():
     sf(["data", "import", "bulk", "--sobject", DIM, "--file", str(tmp / "dims.csv"),
         "--target-org", org, "--wait", a.wait])
 
+    # 6) insert persona surfaces ------------------------------------------
+    # Not findings. A finding says something is wrong; a surface says what a
+    # persona can do, and most of them are correct — which is the half of the
+    # permission question a backlog of problems can never answer.
+    p_cols = ["External_Persona_Id__c", "Scan__c", "Name", "Persona_Kind__c",
+              "Summary__c", "Unbounded__c", "Blanket_Perms__c", "Reach__c",
+              "Objects_Editable__c", "Objects_Readable__c", "Objects_Deletable__c",
+              "Fields_Visible__c", "Fields_Available__c", "Flows__c", "Approvals__c",
+              "Blocked_By__c", "Actions__c", "Editable_Objects__c", "Flow_Names__c",
+              "Blocking_Rules__c"]
+    p_rows = []
+    for s in scans:
+        sid = id_of[s["scan"]["external_scan_id"]]
+        for p in s.get("personas", []):
+            p_rows.append({
+                "External_Persona_Id__c": p["external_persona_id"], "Scan__c": sid,
+                "Name": p["name"][:80], "Persona_Kind__c": p["persona_kind"],
+                "Summary__c": p["summary"], "Unbounded__c": b(p["unbounded"]),
+                "Blanket_Perms__c": p["blanket_perms"], "Reach__c": p["reach"],
+                "Objects_Editable__c": p["objects_editable"],
+                "Objects_Readable__c": p["objects_readable"],
+                "Objects_Deletable__c": p["objects_deletable"],
+                # "" for a permission set: it assigns no layouts, so the count is
+                # unknown rather than zero, and Salesforce must hold null not 0.
+                "Fields_Visible__c": ("" if p["fields_visible"] is None
+                                      else p["fields_visible"]),
+                "Fields_Available__c": p["fields_available"],
+                "Flows__c": p["flows"], "Approvals__c": p["approvals"],
+                "Blocked_By__c": p["blocked_by"], "Actions__c": p["actions"],
+                "Editable_Objects__c": p["editable_objects"],
+                "Flow_Names__c": p["flow_names"],
+                "Blocking_Rules__c": p["blocking_rules"],
+            })
+    if p_rows:
+        write_csv(tmp / "personas.csv", p_cols, p_rows)
+        print(f"\u2192 inserting {len(p_rows)} persona surfaces\u2026")
+        sf(["data", "import", "bulk", "--sobject", PERSONA, "--file",
+            str(tmp / "personas.csv"), "--target-org", org, "--wait", a.wait])
+
     print(f"\nloaded portfolio into {org}: {len(scans)} scans, "
-          f"{len(f_rows)} findings, {len(d_rows)} dimension scores")
+          f"{len(f_rows)} findings, {len(d_rows)} dimension scores, "
+          f"{len(p_rows)} persona surfaces")
 
 
 if __name__ == "__main__":

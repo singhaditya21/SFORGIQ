@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   portfolioStats, bandBreakdown, portfolioFindingBreakdown, dimensionAverages,
   orgRows, heatmapRows, flattenFindings, applyFindingFilter, groundingEconomics,
-  driftByOrg,
+  driftByOrg, personaRows, personaStats, survivalStats, STUCK_SCANS,
   EMPTY_FILTER, findingFilterActive, ruleLabel, BAND_META,
   backlogCsv, downloadCsv,
 } from '../lib/data.js'
@@ -15,6 +15,7 @@ import FindingAnalytics from '../components/FindingAnalytics.jsx'
 import DimensionAverages from '../components/DimensionAverages.jsx'
 import Heatmap from '../components/Heatmap.jsx'
 import DriftPanel from '../components/DriftPanel.jsx'
+import PersonaPanel from '../components/PersonaPanel.jsx'
 import OrgGrid from '../components/OrgGrid.jsx'
 import OrgsTable from '../components/OrgsTable.jsx'
 import PortfolioFindings from '../components/PortfolioFindings.jsx'
@@ -40,6 +41,9 @@ export default function PortfolioView({ data }) {
   const rows = useMemo(() => orgRows(scans), [scans])
   const drift = useMemo(() => driftByOrg(scans), [scans])
   const allFindings = useMemo(() => flattenFindings(scans), [scans])
+  const personas = useMemo(() => personaRows(scans), [scans])
+  const pstats = useMemo(() => personaStats(personas), [personas])
+  const survival = useMemo(() => survivalStats(scans), [scans])
 
   const bandOrgIds = useMemo(
     () => new Set(rows.filter((r) => !filter.band || r.band === filter.band).map((r) => r.externalId)),
@@ -165,6 +169,61 @@ export default function PortfolioView({ data }) {
               </span>
             </div>
             <DriftPanel rows={drift} />
+          </section>
+        )}
+
+        {personas.length > 0 && (
+          <section className="card card--full">
+            <div className="card__head">
+              <h2 className="card__title">What each identity can actually do</h2>
+              <span className="card__hint">
+                {pstats.total} personas · {pstats.unbounded} unbounded
+                {pstats.medianShown != null &&
+                  ` · typically ${Math.round(pstats.medianShown * 100)}% of readable fields are on screen`}
+                {' · click a row for the objects, processes and constraints'}
+              </span>
+            </div>
+            <PersonaPanel rows={personas} />
+          </section>
+        )}
+
+        {survival.measured > 0 && (
+          <section className="card card--full">
+            <div className="card__head">
+              <h2 className="card__title">What the backlog has stopped moving on</h2>
+              <span className="card__hint">
+                consecutive scans reporting the same defect · observed, not estimated
+              </span>
+            </div>
+            <div className="backlog__stats">
+              <div className="stat" title={
+                `Ticketed findings reported by at least ${STUCK_SCANS} consecutive scans of their org.`}>
+                <div className="stat__num">{survival.stuck.toLocaleString()}</div>
+                <div className="stat__label">stuck {STUCK_SCANS}+ scans</div>
+              </div>
+              <div className="stat" title="Backlog findings with enough scan history behind them to have a run at all.">
+                <div className="stat__num">{survival.measured.toLocaleString()}</div>
+                <div className="stat__label">with scan history</div>
+              </div>
+              <div className="stat" title="Longest run any single ticketed finding has survived.">
+                <div className="stat__num">{survival.longest}</div>
+                <div className="stat__label">longest run</div>
+              </div>
+              <div className="stat" title={
+                'Estimated points sitting in findings nobody has cleared. Effort is uncalibrated — '
+                + 'the survival count is not.'}>
+                <div className="stat__num">{survival.stuckEffort.toLocaleString()}</div>
+                <div className="stat__label">
+                  points stuck<span className="stat__prov"> · est.</span>
+                </div>
+              </div>
+            </div>
+            <p className="psurface__caveat">
+              Survival is elapsed evidence, not effort. A finding on its sixth scan is
+              one nobody is fixing — it could be hard, not worth doing, or unlooked at,
+              and this cannot tell those apart. It is here because it needs nobody to
+              record anything: the scans already held contain the answer.
+            </p>
           </section>
         )}
 

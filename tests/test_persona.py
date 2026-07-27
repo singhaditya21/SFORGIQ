@@ -148,3 +148,96 @@ def test_no_index_means_not_measured_rather_than_nothing_depends_on_it():
     from orgiq_spike import Finding
     f = Finding("D1.MISSING_DESCRIPTION", "D1", "Medium", "High", "Policy__c.A__c", "e", "")
     assert scan_result.finding_rows([f], "SCAN-x")[0]["blast_radius"] == 0
+
+
+# ------------------------------------------------- the surface as a record
+#
+# What a reviewer signing off an agent actually reads. Findings say which
+# personas are wrong; these rows say what every persona can do, which is the
+# half of the question a backlog of problems cannot answer.
+
+from conftest import field                                    # noqa: E402
+
+
+def surface(p, fields=()):
+    return persona.surface_rows([p], "SCAN-x", fields)[0]
+
+
+def test_the_summary_reads_as_the_sentence_a_reviewer_recognises():
+    meta = md.OrgMetadata(
+        profiles=[profile("Claims Handler", objs=[("Claim__c",) + EDIT],
+                          layouts=["Claim__c-Main"], flows=["Triage"])],
+        layouts=[md.LayoutMeta(api_name="Claim__c-Main", object_name="Claim__c",
+                               fields=("Reserve__c", "Status__c"))],
+        validation_rules=[md.ValidationRuleMeta(api_name="Reserve_Required",
+                                                object_name="Claim__c")],
+        flows=[md.FlowMeta(api_name="Triage", label="Triage")])
+    fields = [field(f"F{i}__c", object_name="Claim__c") for i in range(10)]
+    row = surface(persona.build_personas(meta)[0], fields)
+
+    assert "edits Claim__c" in row["summary"]
+    assert "sees 2 of 10 fields" in row["summary"]
+    assert "starts 1 flow" in row["summary"]
+    assert "1 validation rule(s) can block it" in row["summary"]
+
+
+def test_a_permission_set_has_no_visible_field_count_rather_than_zero():
+    """Layouts are assigned by profiles. Reporting a permission set as seeing 0
+    fields would read as a finding about the persona when it is a fact about
+    where layout assignments live — so the count is absent, and the summary says
+    why instead of implying a gap."""
+    row = surface(persona.build_personas(
+        md.OrgMetadata(permission_sets=[perm_set("Integration",
+                                                 objs=[("Policy__c",) + EDIT])]))[0])
+    assert row["fields_visible"] is None
+    assert "sees 0" not in row["summary"]
+    assert "no layouts of its own" in row["summary"]
+
+
+def test_an_unbounded_persona_is_described_by_that_and_not_by_counts():
+    """Counting the objects of a persona that reaches every record of every
+    object implies a boundary it does not have."""
+    row = surface(persona.build_personas(md.OrgMetadata(
+        permission_sets=[perm_set("Admin", perms=["ModifyAllData"],
+                                  objs=[("Policy__c",) + EDIT])]))[0])
+    assert row["unbounded"] is True
+    assert "every record of every object" in row["summary"]
+    assert "edits Policy__c" not in row["summary"]
+
+
+def test_the_visible_share_is_a_fraction_of_what_the_persona_may_read():
+    """"Sees 2 fields" is a number with nothing to be a fraction of. The
+    denominator is the fields on the objects this persona has access to."""
+    meta = md.OrgMetadata(
+        profiles=[profile("Agent", objs=[("Policy__c",) + EDIT, ("Claim__c",) + READ],
+                          layouts=["Policy__c-Main"])],
+        layouts=[md.LayoutMeta(api_name="Policy__c-Main", object_name="Policy__c",
+                               fields=("A__c",))])
+    fields = ([field("A__c", object_name="Policy__c")]
+              + [field(f"C{i}__c", object_name="Claim__c") for i in range(4)])
+    row = surface(persona.build_personas(meta)[0], fields)
+    assert row["fields_visible"] == 1
+    assert row["fields_available"] == 5      # both objects it may read, not just one
+
+
+def test_surfaces_are_ordered_widest_first():
+    """The persona worth reviewing is the one that reaches furthest; alphabetical
+    order buries it among the narrow ones."""
+    meta = md.OrgMetadata(permission_sets=[
+        perm_set("A_Narrow", objs=[("X__c",) + READ]),
+        perm_set("Z_Blanket", perms=["ViewAllData"], objs=[("X__c",) + EDIT]),
+        perm_set("M_Wide", objs=[(f"O{i}__c",) + EDIT for i in range(5)]),
+    ])
+    names = [r["name"] for r in persona.surface_rows(
+        persona.build_personas(meta), "SCAN-x")]
+    assert names == ["Z_Blanket", "M_Wide", "A_Narrow"]
+
+
+def test_two_personas_in_one_scan_never_share_an_id():
+    """The id is scoped to the scan and keyed on kind and name — a collision
+    would silently overwrite one surface with the other at load time."""
+    meta = md.OrgMetadata(profiles=[profile("Ops")],
+                          permission_sets=[perm_set("Ops")])
+    ids = {r["external_persona_id"] for r in persona.surface_rows(
+        persona.build_personas(meta), "SCAN-x")}
+    assert len(ids) == 2

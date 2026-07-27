@@ -52,21 +52,19 @@ import backlog  # sibling module (remediation, effort, gate, external id)
 import density  # sibling module (deterministic grounding estimates)
 import effort as effort_mod  # evidence-responsive effort + calibration loop
 import persona as persona_mod  # capability surfaces + blast radius
+import rubric  # the judgement half: bands, penalties, playbook
 import metadata as sfmeta  # signal registry: coverage threshold + status vocabulary
 
-RUBRIC_VERSION = "0.2.0-spike"
+# From scanner/rubric.json, so a rubric change and the version stamped on the
+# scans it produced cannot get out of step.
+RUBRIC_VERSION = rubric.RUBRIC_VERSION
 
 # Which tool produced a finding. Everything this scanner emits is "OrgIQ"; the
 # field exists so findings imported from Optimizer / Health Check / Code
 # Analyzer can share the record set without a schema change.
 DEFAULT_FINDING_SOURCE = "OrgIQ"
 
-BANDS = [
-    (0, 40, "Not Ready"),
-    (41, 60, "Foundational Work Required"),
-    (61, 80, "Conditionally Ready"),
-    (81, 100, "Ready"),
-]
+BANDS = rubric.BANDS
 
 _DIM_FULL = {
     "D1": "D1 Grounding Quality",
@@ -85,8 +83,9 @@ _MISSING = {
     "D5": "trigger / flow automation graph not yet built",
 }
 
-# Penalty per finding for the D2–D5 dimensions (PROVISIONAL).
-_PENALTY = {"Critical": 29, "High": 15, "Medium": 7, "Low": 2.5}
+# Penalty per finding for the D2–D5 dimensions (PROVISIONAL) — rubric, not
+# engine, so it lives in scanner/rubric.json with the rest of the judgement.
+_PENALTY = rubric.PENALTY
 
 # OrgIQ_Dimension_Score__c.Missing_Signals__c is Text(255). Clipped here rather
 # than in the loader so the JSON and the Salesforce record say the same thing.
@@ -122,7 +121,9 @@ def _d1_score(fields, findings) -> int:
             implicated.update(_fields_in(f))
     structural_clean = 1.0 - min(1.0, len(implicated) / total)
 
-    score = 100 * (0.65 * effective_coverage + 0.35 * structural_clean)
+    w = rubric.D1_WEIGHTS
+    score = 100 * (w["description_coverage"] * effective_coverage
+                   + w["structural_cleanliness"] * structural_clean)
     return int(round(max(0.0, min(100.0, score))))
 
 
@@ -235,12 +236,20 @@ def _composite(dim_rows, findings) -> tuple:
     # Over the scoreable findings only, for the same reason the dimension scores
     # are: a Health Check risk is reported and ticketed under D4 but does not
     # redefine what D4 measures, and the gate is part of that arithmetic.
-    if any(f.dimension == "D4" and f.severity == "Critical" for f in _scoreable(findings)):
-        caps.append(60)
-        reasons.append("a Critical D4 permission finding caps the composite at 60")
-    if any(s < 30 for s in scored):
-        caps.append(70)
-        reasons.append("a dimension scored below 30 caps the composite at 70")
+    #
+    # Which caps exist and what they are worth is rubric; *when* each one fires
+    # is engine, and stays here as a named condition the data refers to. A cap
+    # whose condition this file does not implement is ignored rather than
+    # silently treated as met — a rubric edit must not be able to invent a cap.
+    triggered = {
+        "critical_d4_finding": any(f.dimension == "D4" and f.severity == "Critical"
+                                   for f in _scoreable(findings)),
+        "any_dimension_below_30": any(s < 30 for s in scored),
+    }
+    for cap in rubric.GATE_CAPS:
+        if triggered.get(cap["when"]):
+            caps.append(cap["cap"])
+            reasons.append(cap["reason"])
 
     gate_applied = False
     if caps and min(caps) < composite:
@@ -385,7 +394,8 @@ def finding_rows(findings, scan_external_id: str, blast=None,
 def build(fields, findings, source: str, scan_mode: str = "Source",
           assessed_dims=frozenset({"D1"}), now: datetime | None = None,
           report_refs=None, code_tokens=frozenset(), coverage=None,
-          org_type: str = "", org_overrides: dict = None, blast=None) -> dict:
+          org_type: str = "", org_overrides: dict = None, blast=None,
+          personas=None) -> dict:
     """`report_refs` / `code_tokens` are the same reference evidence the D1 rules
     run on. They are optional and trail the older arguments so existing callers
     keep working, but a caller that has them should pass them: without them the
@@ -396,7 +406,13 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
     which rules had the evidence to run. Supply it and each dimension is written
     out at its real rule coverage, with the signals that were missing named and
     the §7.2.4 partial-assessment rule applied; omit it and the caller's
-    `assessed_dims` is taken at face value, as before."""
+    `assessed_dims` is taken at face value, as before.
+
+    `personas` is `persona.build_personas()` — the capability surfaces this scan
+    reconstructed. They were already being built (the D4 persona rules and the
+    blast index both run on them) and then discarded once their findings were
+    out. Passing them here keeps the surface itself, so a reviewer can see the
+    personas that are correctly bounded and not only the ones that are not."""
     now = now or datetime.now(timezone.utc)
     dim_rows = _dimension_rows(fields, findings, assessed_dims, coverage)
     composite, gate_applied, gate_reason = _composite(dim_rows, findings)
@@ -446,7 +462,11 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
 
     return {"org": org, "scan": scan, "dimensions": dim_rows,
             "findings": finding_rows(findings, scan["external_scan_id"], blast,
-                                     org["org_type"])}
+                                     org["org_type"]),
+            # [] when the caller built no personas — which means this scan could
+            # not read profile metadata, not that the org has no personas.
+            "personas": persona_mod.surface_rows(
+                personas or [], scan["external_scan_id"], fields)}
 
 
 def write_json(result: dict, path: str):

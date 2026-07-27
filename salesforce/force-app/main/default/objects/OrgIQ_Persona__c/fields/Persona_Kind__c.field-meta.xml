@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Persona_Kind__c</fullName>
+    <description>Profile or permission set. It matters for reading the record: only a profile assigns layouts, so a permission set has no visible-field count rather than a count of zero.</description>
+    <label>Persona Kind</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value><fullName>Profile</fullName><default>false</default><label>Profile</label></value>
+            <value><fullName>PermissionSet</fullName><default>false</default><label>Permission Set</label></value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

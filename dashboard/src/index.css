@@ -648,3 +648,57 @@ code { font-family: var(--mono); font-size: 0.92em; }
                   overflow-wrap: anywhere; }
 .driftrow__item b { color: var(--text); font-weight: 600; }
 .drift__none { color: var(--text-3); padding: 18px; text-align: center; }
+
+/* ---------- persona capability surfaces ---------- */
+.psurface { display: grid; }
+.psurface__item { border-bottom: 1px solid var(--line); }
+.psurface__item:last-child { border-bottom: 0; }
+.psurface__row { display: grid; width: 100%; text-align: left; font: inherit; color: inherit;
+  grid-template-columns: minmax(190px, 2.1fr) minmax(130px, 1.3fr) 56px 62px 96px 58px 74px 66px;
+  align-items: center; gap: 10px; padding: 9px 14px; background: none; border: 0;
+  cursor: pointer; }
+/* One org per page: the org column is not rendered, so the template must lose
+   it too — otherwise every cell inherits the width of the column before it and
+   the "Shown" bar is sized for a two-digit count. */
+.psurface--noorg .psurface__row {
+  grid-template-columns: minmax(190px, 2.4fr) 56px 62px 110px 58px 74px 66px; }
+.psurface__row:hover { background: var(--accent-soft); }
+.psurface__row--head { cursor: default; font-size: 10.5px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-3); background: var(--surface-2);
+  border-bottom: 1px solid var(--line); padding-top: 7px; padding-bottom: 7px; }
+.psurface__row--head:hover { background: var(--surface-2); }
+.psurface__item.is-open > .psurface__row { background: var(--accent-soft); }
+.psurface__name { display: flex; align-items: center; gap: 7px; font-weight: 600;
+  font-size: 12.5px; overflow-wrap: anywhere; }
+.psurface__kind { font-size: 9.5px; font-weight: 700; letter-spacing: .03em;
+  padding: 2px 5px; border-radius: 3px; flex: none; }
+.psurface__kind--profile { background: var(--accent); color: #fff; }
+.psurface__kind--permset { background: var(--surface-2); color: var(--text-2);
+  border: 1px solid var(--line); }
+.psurface__org { font-size: 11.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.psurface__n { font-variant-numeric: tabular-nums; font-size: 12.5px; text-align: right;
+  color: var(--text-2); }
+.psurface__bar { position: relative; display: block; height: 16px; border-radius: 3px;
+  background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.psurface__fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .55; }
+.psurface__pct { position: relative; display: block; text-align: center; font-size: 10.5px;
+  line-height: 16px; font-variant-numeric: tabular-nums; color: var(--text); }
+.psurface__na { color: var(--text-3); text-align: center; font-size: 12px; cursor: help; }
+.psurface__detail { padding: 4px 14px 14px 14px; background: var(--accent-soft);
+  display: grid; gap: 10px; }
+.psurface__list { display: grid; gap: 5px; }
+.psurface__listhead { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-3); }
+.psurface__chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.psurface__chip { font-size: 11px; padding: 2px 7px; border-radius: 3px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--text-2); }
+.psurface__caveat { font-size: 11px; line-height: 1.5; color: var(--text-3); margin: 2px 0 0; }
+.psurface__caveat b { color: var(--text-2); }
+/* Narrow screens scroll the table rather than hiding columns: a dropped column
+   is a number a reviewer cannot see and has no way to know was there. */
+@media (max-width: 860px) {
+  .psurface { overflow-x: auto; }
+  .psurface__row { min-width: 720px; }
+  .psurface--noorg .psurface__row { min-width: 600px; }
+  .psurface__detail { min-width: 600px; }
+}

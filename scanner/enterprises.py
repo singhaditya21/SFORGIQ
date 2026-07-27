@@ -219,3 +219,111 @@ def org_display_name(enterprise: str, org: str) -> str:
     A real install has one estate and no prefix.
     """
     return f"{enterprise} · {org}"
+
+
+# ----------------------------------------------------------------- personas
+#
+# The jobs people actually hold in these two businesses, as the access those
+# jobs need. This exists because the persona model reads five kinds of metadata
+# — profile, layout, flow, approval process, validation rule — and the demo
+# estate was feeding it exactly one, a single blanket permission set. Every
+# surface it produced was therefore the same shape, and the sentence the whole
+# feature is for ("this persona edits Claim, sees 34 of 61 fields, starts two
+# flows, and two validation rules constrain it") could not be produced at all.
+#
+# `edits` / `reads` are named by object so a persona is recognisably a job
+# rather than a random subset. `laid_out` is the objects this role has a screen
+# for — normally the same as `edits`, and deliberately narrower for the roles
+# where real orgs hand out rights nobody built a process for.
+
+PERSONAS = {
+    "insurance": [
+        {"api": "Claims_Handler", "label": "Claims Handler",
+         "edits": ["Claim__c", "Coverage__c"],
+         "reads": ["Policy__c", "Broker__c"],
+         "laid_out": ["Claim__c", "Coverage__c"]},
+        {"api": "Underwriter", "label": "Underwriter",
+         "edits": ["Underwriting_Decision__c", "Policy__c"],
+         "reads": ["Claim__c", "Coverage__c", "Broker__c"],
+         "laid_out": ["Underwriting_Decision__c", "Policy__c"],
+         "approves": True},
+        {"api": "Service_Agent", "label": "Service Agent",
+         "edits": ["Policy__c"],
+         "reads": ["Claim__c", "Coverage__c"],
+         "laid_out": ["Policy__c"]},
+        {"api": "Broker_Operations", "label": "Broker Operations",
+         "edits": ["Broker__c"],
+         "reads": ["Policy__c"],
+         "laid_out": ["Broker__c"],
+         "deletes": ["Broker__c"]},
+        # The archetype every long-lived org has: someone who was given edit
+        # rights across the estate over the years and still works one screen.
+        # Not planted as a defect — it is stated as the access this role holds,
+        # and D4.PERSONA_BEYOND_PROCESS has to notice the gap on its own.
+        {"api": "Operations_Manager", "label": "Operations Manager",
+         "edits": ["Claim__c", "Policy__c", "Coverage__c",
+                   "Underwriting_Decision__c", "Broker__c"],
+         "reads": [],
+         "laid_out": ["Claim__c"]},
+    ],
+    "banking": [
+        {"api": "Relationship_Manager", "label": "Relationship Manager",
+         "edits": ["Loan__c", "Account_Application__c"],
+         "reads": ["Collateral__c", "Credit_Decision__c"],
+         "laid_out": ["Loan__c", "Account_Application__c"]},
+        {"api": "Credit_Officer", "label": "Credit Officer",
+         "edits": ["Credit_Decision__c"],
+         "reads": ["Loan__c", "Account_Application__c", "Collateral__c"],
+         "laid_out": ["Credit_Decision__c"],
+         "approves": True},
+        {"api": "Onboarding_Analyst", "label": "Onboarding Analyst",
+         "edits": ["Account_Application__c", "KYC_Check__c"],
+         "reads": ["Loan__c"],
+         "laid_out": ["Account_Application__c", "KYC_Check__c"]},
+        {"api": "Collections_Officer", "label": "Collections Officer",
+         "edits": ["Loan__c"],
+         "reads": ["Collateral__c", "Credit_Decision__c"],
+         "laid_out": ["Loan__c"],
+         "deletes": ["Loan__c"]},
+        {"api": "Branch_Operations", "label": "Branch Operations",
+         "edits": ["Loan__c", "Account_Application__c", "KYC_Check__c",
+                   "Collateral__c", "Credit_Decision__c"],
+         "reads": [],
+         "laid_out": ["Account_Application__c"]},
+    ],
+}
+
+# The rules that refuse a save. Two per object at most: a persona constrained by
+# fourteen validation rules is a different (and rarer) story than the one this
+# demo tells, and inflating the count would make the constraint column noise.
+VALIDATION_RULES = {
+    "insurance": {
+        "Policy__c": [("Expiry_After_Effective", "Cover cannot lapse before it begins."),
+                      ("Premium_Positive", "A policy in force must carry a premium.")],
+        "Claim__c": [("Loss_Before_Report", "A loss cannot be reported before it occurred."),
+                     ("Reserve_Required_When_Open", "An open claim must hold a reserve.")],
+        "Coverage__c": [("Deductible_Below_Limit", "A deductible above the limit leaves no cover.")],
+        "Underwriting_Decision__c": [
+            ("Referral_Needs_Reason", "A referred risk must record why.")],
+        "Broker__c": [("Agency_Code_Format", "Agency codes follow the ledger's format.")],
+    },
+    "banking": {
+        "Loan__c": [("Balance_Not_Above_Principal", "Outstanding cannot exceed what was advanced."),
+                    ("Maturity_After_Drawdown", "A facility cannot mature before it starts.")],
+        "Account_Application__c": [
+            ("Decline_Needs_Reason", "A declined application must record why."),
+            ("Income_Required_For_Affordability", "Affordability needs a declared income.")],
+        "Collateral__c": [("Valuation_Not_Stale", "A valuation over twelve months old cannot be relied on.")],
+        "KYC_Check__c": [("Outcome_Requires_Provider_Ref", "A completed check must cite its provider reference.")],
+        "Credit_Decision__c": [("Approval_Within_Mandate", "An approval must sit inside the mandate it was taken under.")],
+    },
+}
+
+# The processes a decision has to pass through. Keyed to the object the
+# approving persona edits, which is what makes it that persona's process.
+APPROVALS = {
+    "insurance": [("Referred_Risk_Approval", "Underwriting_Decision__c"),
+                  ("Large_Claim_Settlement", "Claim__c")],
+    "banking": [("Credit_Committee_Sanction", "Credit_Decision__c"),
+                ("Above_Mandate_Lending", "Loan__c")],
+}

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>A capability surface: what one profile or permission set can actually do, assembled from the profile, its layouts, the flows it may run, the approvals it takes part in and the validation rules that constrain it. An agent runs as a persona, so this is the honest answer to what that agent can reach. Most personas are correct — recording them all is what lets a reviewer confirm that, which a backlog of problems cannot.</description>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <enableActivities>false</enableActivities>
+    <enableHistory>false</enableHistory>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <label>OrgIQ Persona</label>
+    <pluralLabel>OrgIQ Personas</pluralLabel>
+    <nameField>
+        <label>Persona</label>
+        <type>Text</type>
+    </nameField>
+    <sharingModel>ControlledByParent</sharingModel>
+</CustomObject>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Reach__c</fullName>
+    <description>A blunt single number for ordering personas against each other. Not a measurement, and not to be reported as one.</description>
+    <label>Reach</label>
+    <precision>9</precision>
+    <scale>0</scale>
+    <required>false</required>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

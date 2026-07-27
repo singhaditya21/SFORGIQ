@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Objects_Deletable__c</fullName>
+    <description>Objects it may delete records on. Rarely required by an agent, and irreversible when wrong.</description>
+    <label>Objects Deletable</label>
+    <precision>9</precision>
+    <scale>0</scale>
+    <required>false</required>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

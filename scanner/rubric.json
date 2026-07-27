@@ -1,0 +1,352 @@
+{
+  "_readme": "The rubric, as data. Every value here is judgement — what a defect is worth fixing, what it costs, how a score is penalised — as opposed to the engine, which is the code that finds the defects. They are separated because they change for different reasons and by different people: a practitioner tunes this file without touching Python, and a port of the engine to another runtime (Apex, inside a managed package) has to carry the engine only, because this file goes with it unchanged.",
+  "rubric_version": "0.2.0-spike",
+  "emission_gate": {
+    "_why": "PRD 4.6. Every finding is recorded; only these auto-emit as backlog items. Without the gate a large org produces a four-thousand-ticket dump nobody imports.",
+    "min_severity": "Medium",
+    "min_confidence": "Medium",
+    "severity_rank": {
+      "Critical": 4,
+      "High": 3,
+      "Medium": 2,
+      "Low": 1
+    },
+    "confidence_rank": {
+      "High": 3,
+      "Medium": 2,
+      "Low": 1
+    }
+  },
+  "jira_priority": {
+    "Critical": "Highest",
+    "High": "High",
+    "Medium": "Medium",
+    "Low": "Low"
+  },
+  "dimension_names": {
+    "D1": "Grounding Quality",
+    "D2": "Data Foundation",
+    "D3": "Action Surface",
+    "D4": "Permission Blast Radius",
+    "D5": "Automation Collision"
+  },
+  "scoring": {
+    "_why": "PRD 4.2-4.3. PROVISIONAL: the weights are placeholders until a rubric is calibrated, and nothing downstream claims otherwise.",
+    "bands": [
+      [
+        0,
+        40,
+        "Not Ready"
+      ],
+      [
+        41,
+        60,
+        "Foundational Work Required"
+      ],
+      [
+        61,
+        80,
+        "Conditionally Ready"
+      ],
+      [
+        81,
+        100,
+        "Ready"
+      ]
+    ],
+    "penalty_per_finding": {
+      "Critical": 29,
+      "High": 15,
+      "Medium": 7,
+      "Low": 2.5
+    },
+    "gate_caps": [
+      {
+        "cap": 60,
+        "when": "critical_d4_finding",
+        "reason": "a Critical D4 permission finding caps the composite at 60"
+      },
+      {
+        "cap": 70,
+        "when": "any_dimension_below_30",
+        "reason": "a dimension scored below 30 caps the composite at 70"
+      }
+    ],
+    "d1_weights": {
+      "description_coverage": 0.65,
+      "structural_cleanliness": 0.35
+    }
+  },
+  "effort": {
+    "_why": "The base points are judgement; the multipliers apply to things this scanner measured. Nothing here is calibrated until real actuals have been fed to effort.calibrate().",
+    "model_version": "effort-0.2-uncalibrated",
+    "scale": [
+      1,
+      2,
+      3,
+      5,
+      8,
+      13,
+      21
+    ],
+    "min_samples": 30,
+    "blast_bands": [
+      [
+        16,
+        2.0,
+        "16+ dependants — every consumer has to be cleared first"
+      ],
+      [
+        6,
+        1.5,
+        "6-15 dependants — consumers must be checked before the change"
+      ],
+      [
+        1,
+        1.0,
+        "few dependants"
+      ],
+      [
+        0,
+        1.0,
+        "no dependency data"
+      ]
+    ],
+    "org_type_factor": {
+      "Production": [
+        1.5,
+        "production change control"
+      ],
+      "UAT": [
+        1.1,
+        "shared environment"
+      ],
+      "Staging": [
+        1.1,
+        "shared environment"
+      ]
+    },
+    "group_factor": {
+      "per_extra_member": 0.25,
+      "cap": 2.5
+    }
+  },
+  "unknown_rule": {
+    "epic": "Grounding quality findings",
+    "points": 3,
+    "remediation": "1. Investigate the flagged component.\n2. Apply the appropriate grounding fix.\n3. Re-scan to confirm the finding clears.",
+    "acceptance": "Re-scan no longer reports this finding for the component."
+  },
+  "playbook": {
+    "D1.MISSING_DESCRIPTION": {
+      "epic": "Add missing field descriptions",
+      "points": 1,
+      "remediation": "1. Determine the field's business meaning from its usage (page layouts, reports, automation that reads it).\n2. Add a <description> stating what it holds and when it is set; add matching inline help text.\n3. Redeploy the field metadata.",
+      "acceptance": "Field has a non-empty description that states its business meaning (not just a restatement of the label). Re-scan reports no D1.MISSING_DESCRIPTION for this field."
+    },
+    "D1.LOW_INFO_DESCRIPTION": {
+      "epic": "Replace label-restating field descriptions",
+      "points": 1,
+      "remediation": "1. Confirm the field's actual meaning; the current description only echoes the label and adds no disambiguating information.\n2. Rewrite it to say what distinguishes this field from similar ones (unit, source system, when populated, valid values).\n3. Redeploy.",
+      "acceptance": "Description carries information beyond the label. Re-scan reports no D1.LOW_INFO_DESCRIPTION for this field."
+    },
+    "D1.CRYPTIC_API_NAME": {
+      "epic": "Clarify cryptic field names",
+      "points": 3,
+      "remediation": "1. Confirm the field's meaning with an owner; cryptic / abbreviated names cannot be grounded reliably.\n2. Cheap win first: add a clear description and inline help text.\n3. If renaming, use a dependency-safe rename — check formulas, flows, Apex, reports, and integrations before changing the API name, and stage the change.",
+      "acceptance": "Field is unambiguous to a reader with no tribal knowledge — via a clear description and/or a readable API name. Re-scan reports no D1.CRYPTIC_API_NAME for this field."
+    },
+    "D1.NUMBERED_FAMILY": {
+      "epic": "Resolve numbered field families",
+      "points": 5,
+      "remediation": "1. Review whether the repeating numbered group should instead be a child object / related list (N rows, not N columns).\n2. If the flat design must stay, give each member a distinct description so a retriever can tell them apart.\n3. Retire unused members via a dependency-safe deprecation.",
+      "acceptance": "Either the group is modelled as a related list, or each member carries a distinct, disambiguating description. Re-scan reports no D1.NUMBERED_FAMILY for this object, or a smaller family."
+    },
+    "D1.SEMANTIC_DUPLICATE": {
+      "epic": "Consolidate duplicate fields",
+      "points": 3,
+      "remediation": "1. Confirm the fields are true duplicates by comparing data and usage — near-identical names can still mean different things.\n2. Choose the canonical field.\n3. Migrate data and references to it, then deprecate the others via a dependency-safe removal.",
+      "acceptance": "One canonical field remains; duplicates are deprecated with data and references migrated. Re-scan reports no D1.SEMANTIC_DUPLICATE for this cluster."
+    },
+    "D1.UNREFERENCED_FIELD": {
+      "epic": "Retire unreferenced fields",
+      "points": 3,
+      "remediation": "1. Confirm the field is genuinely unused. Source mode only sees reports and dashboards that are committed to the repo, so check integrations, managed packages, and anything outside this repository before treating 'no references' as 'unused'.\n2. If it is dead, deprecate before deleting: remove it from page layouts and permission sets and let a full business cycle pass.\n3. Delete the field. If it must stay, describe what it is for so it stops competing with live fields for retrieval.",
+      "acceptance": "Field is deleted, or retained with a documented reason and hidden from the agent's layouts and permissions. Absence of references was verified against integrations and managed packages, not just the committed report metadata. Re-scan reports no D1.UNREFERENCED_FIELD for this field."
+    },
+    "D2.LOW_FILL_RATE": {
+      "epic": "Backfill under-populated fields",
+      "points": 5,
+      "remediation": "1. Identify records missing the field and the system of record.\n2. Backfill from source or mark deliberately empty.\n3. Add validation/automation to keep it populated going forward.",
+      "acceptance": "Fill rate on the field exceeds the grounding threshold; re-scan clears the finding."
+    },
+    "D2.STALE_DATA": {
+      "epic": "Refresh stale data",
+      "points": 3,
+      "remediation": "1. Confirm which records are genuinely stale vs dormant.\n2. Refresh from source or archive.\n3. Add a freshness SLA / last-verified process.",
+      "acceptance": "Stale-record ratio falls below threshold; re-scan clears the finding."
+    },
+    "D2.DUPLICATE_RECORDS": {
+      "epic": "De-duplicate records",
+      "points": 5,
+      "remediation": "1. Run matching rules to cluster duplicates.\n2. Merge to a surviving record with the correct field survivorship.\n3. Add duplicate rules to prevent recurrence.",
+      "acceptance": "Duplicate rate below threshold; re-scan clears the finding."
+    },
+    "D3.NO_SAFE_ACTIONS": {
+      "epic": "Build a safe action surface",
+      "points": 8,
+      "remediation": "1. Identify the tasks the agent must perform.\n2. Expose bulk-safe, idempotent invocable actions with typed inputs.\n3. Document each so the planner can select it.",
+      "acceptance": "At least one bulk-safe invocable action exists per intended task; re-scan clears the finding."
+    },
+    "D3.UNDOCUMENTED_ACTION": {
+      "epic": "Document invocable actions",
+      "points": 2,
+      "remediation": "1. Describe what the action does, its inputs, and when to use it.\n2. Keep the description disambiguating, not a restatement of the name.",
+      "acceptance": "Action carries a planner-usable description; re-scan clears the finding."
+    },
+    "D3.APEX_NO_TESTS": {
+      "epic": "Cover agent-invoked Apex with tests",
+      "points": 3,
+      "remediation": "1. Add tests exercising the class's bulk and error paths.\n2. Assert on outcomes, not just coverage percentage.",
+      "acceptance": "Class has meaningful test coverage; re-scan clears the finding."
+    },
+    "D4.MODIFY_ALL_DATA": {
+      "epic": "Remove Modify All Data from the agent",
+      "points": 5,
+      "remediation": "1. Enumerate what the agent actually needs to write.\n2. Replace Modify All Data with scoped object/field permissions.\n3. Re-test the agent against the tightened permission set.",
+      "acceptance": "Agent permission set no longer grants Modify All Data; re-scan clears the finding."
+    },
+    "D4.VIEW_ALL_DATA": {
+      "epic": "Remove View All Data from the agent",
+      "points": 3,
+      "remediation": "1. Determine the records the agent legitimately reads.\n2. Replace View All Data with sharing-based or scoped read access.",
+      "acceptance": "Agent permission set no longer grants View All Data; re-scan clears the finding."
+    },
+    "D4.WIDE_OBJECT_ACCESS": {
+      "epic": "Tighten over-broad object access",
+      "points": 2,
+      "remediation": "1. Compare granted object/field access to the agent's task scope.\n2. Revoke access beyond what the task requires.",
+      "acceptance": "Object access matches task scope; re-scan clears the finding."
+    },
+    "D5.DML_IN_LOOP": {
+      "epic": "Bulkify automation",
+      "points": 5,
+      "remediation": "1. Move DML out of loops; collect and act on collections.\n2. Add bulk tests (200+ records) that would have caught it.",
+      "acceptance": "No DML in loops on the automation path; bulk tests pass; re-scan clears the finding."
+    },
+    "D5.MULTIPLE_TRIGGERS": {
+      "epic": "Consolidate triggers per object",
+      "points": 8,
+      "remediation": "1. Consolidate to one trigger per object delegating to a handler.\n2. Define a deterministic execution order.",
+      "acceptance": "One trigger per object with defined order; re-scan clears the finding."
+    },
+    "D5.NO_RECURSION_GUARD": {
+      "epic": "Add recursion guards",
+      "points": 3,
+      "remediation": "1. Add a static guard so the handler runs once per transaction.\n2. Verify an agent-initiated write cannot re-fire the automation.",
+      "acceptance": "Automation is recursion-safe; re-scan clears the finding."
+    },
+    "DRIFT.BEHIND_REFERENCE": {
+      "epic": "Realign environments with production",
+      "points": 5,
+      "remediation": "1. Confirm which of the missing components are genuinely absent rather than renamed.\n2. Refresh this org from production, or deploy the missing components if a refresh would lose in-flight work.\n3. Re-run any agent validation done here — the earlier run did not cover production's schema.",
+      "acceptance": "This org carries the production components an agent is validated against; re-scan reports no DRIFT.BEHIND_REFERENCE."
+    },
+    "DRIFT.AHEAD_OF_REFERENCE": {
+      "epic": "Promote or retire unreleased components",
+      "points": 3,
+      "remediation": "1. Separate genuinely in-flight work from components that were built here and never promoted.\n2. Promote what is ready; delete what was abandoned.\n3. Record anything deliberately org-local so it stops reading as drift.",
+      "acceptance": "Every component here is either released, in an open change, or documented as org-local."
+    },
+    "DRIFT.AUTOMATION_DIVERGED": {
+      "epic": "Realign automation across environments",
+      "points": 8,
+      "remediation": "1. Diff the triggers and flows against the reference org.\n2. Bring the automation chain into line, or record the difference as intended with the reason.\n3. Re-test an agent write in both orgs and confirm the same chain fires.",
+      "acceptance": "An identical agent write triggers the same automation in this org and the reference; re-scan reports no DRIFT.AUTOMATION_DIVERGED."
+    },
+    "DRIFT.PERMISSION_DIVERGED": {
+      "epic": "Realign agent permissions across environments",
+      "points": 5,
+      "remediation": "1. Compare the permission sets against the reference org.\n2. Align the agent's permission set specifically — its reach is what a blast-radius assessment rests on.\n3. Re-run the D4 assessment once aligned.",
+      "acceptance": "The agent identity holds the same permissions in this org as in the reference; re-scan reports no DRIFT.PERMISSION_DIVERGED."
+    },
+    "D4.PERSONA_UNBOUNDED": {
+      "epic": "Bound the agent persona's reach",
+      "points": 8,
+      "remediation": "1. List what the agent's tasks genuinely require.\n2. Remove the blanket permission and grant scoped object and field access instead.\n3. Re-run the agent's test suite under the tightened persona — blanket rights hide every sharing mistake underneath them.",
+      "acceptance": "The persona grants no Modify All Data or View All Data; the agent still completes its tasks; re-scan clears the finding."
+    },
+    "D4.PERSONA_BEYOND_PROCESS": {
+      "epic": "Align persona access with its process",
+      "points": 5,
+      "remediation": "1. Compare the objects this persona can edit with the ones its layouts actually surface.\n2. Revoke edit access on objects it has no process for, or add the layout if the process is real and undocumented.",
+      "acceptance": "Every object the persona can edit is one it has a process for; re-scan clears the finding."
+    },
+    "D4.PERSONA_CAN_DELETE": {
+      "epic": "Remove unnecessary delete rights",
+      "points": 3,
+      "remediation": "1. Confirm whether any agent task requires a hard delete.\n2. Prefer a status change or soft delete; revoke delete where it is not needed.",
+      "acceptance": "Delete is granted only where a task requires it; re-scan clears it."
+    },
+    "D3.INACTIVE_ACTION": {
+      "epic": "Activate or retire dormant flows",
+      "points": 2,
+      "remediation": "1. Decide whether the flow is still needed.\n2. Activate it (after testing) or delete it so it stops appearing as a candidate action.",
+      "acceptance": "No Draft/Obsolete flow is exposed as an agent action; re-scan clears it."
+    },
+    "D4.DELETE_GRANTED": {
+      "epic": "Remove unnecessary delete rights",
+      "points": 2,
+      "remediation": "1. Confirm the agent's tasks genuinely require deletes.\n2. If not, revoke delete on the object; prefer soft-delete or status changes for agent-driven flows.",
+      "acceptance": "Delete is granted only where a task requires it; re-scan clears it."
+    },
+    "D5.SOQL_IN_LOOP": {
+      "epic": "Bulkify automation",
+      "points": 5,
+      "remediation": "1. Hoist the query out of the loop and map results by key.\n2. Add a bulk test (200+ records) that would have caught it.",
+      "acceptance": "No SOQL inside loops on the automation path; re-scan clears it."
+    },
+    "D5.TRIGGER_AND_FLOW": {
+      "epic": "Resolve trigger/flow ordering collisions",
+      "points": 8,
+      "remediation": "1. Map what the trigger and the record-triggered flow each do.\n2. Consolidate into one automation path, or set explicit flow trigger order and document the contract.\n3. Add a test that writes the record the way an agent would.",
+      "acceptance": "One deterministic automation path per object; re-scan clears it."
+    },
+    "D5.EXT_BULK_SAFETY": {
+      "epic": "Bulkify automation",
+      "points": 5,
+      "remediation": "1. Open the flagged file at the reported line and confirm the violation — Code Analyzer parses Apex, so treat it as a finding, not a hint.\n2. Hoist the query or DML out of the loop and act on collections; where the caller is agent-invoked, check the whole call path, not just this method.\n3. Add a bulk test (200+ records) that fails before the fix.",
+      "acceptance": "Re-running Code Analyzer over the same workspace reports no bulk-safety violation for this file, and a 200-record test passes."
+    },
+    "D4.EXT_SECURITY_VIOLATION": {
+      "epic": "Close code-level security violations",
+      "points": 5,
+      "remediation": "1. Read the rule's documentation link on the finding; CRUD/FLS, sharing and injection rules each have a specific safe form.\n2. Apply it — enforce sharing, check accessibility before the query or DML, bind variables instead of concatenating SOQL.\n3. Re-run Code Analyzer with the same rule selector to confirm the path is clear, including any Graph Engine path rules.",
+      "acceptance": "Re-running Code Analyzer reports no security violation for this file. Note this is Code Analyzer's verdict, not OrgIQ's: OrgIQ does not analyse Apex data flow and cannot confirm the fix."
+    },
+    "D3.EXT_TEST_QUALITY": {
+      "epic": "Cover agent-invoked Apex with tests",
+      "points": 3,
+      "remediation": "1. Add assertions that check outcomes — a test that runs code without asserting anything proves only that it did not throw.\n2. Remove SeeAllData=true and build the data the test needs.\n3. Exercise the bulk and error paths an agent will hit.",
+      "acceptance": "Re-running Code Analyzer reports no test-quality violation for this class, and the tests assert on outcomes rather than coverage."
+    },
+    "D4.HEALTH_CHECK_RISK": {
+      "epic": "Raise the org to the Health Check baseline",
+      "points": 2,
+      "remediation": "1. Open Setup > Security > Health Check and find the setting named on this finding; the page fixes most settings in place.\n2. Confirm the change is safe for existing integrations and logins before applying it — several of these settings can lock out a working integration.\n3. Apply it, or record a documented exception with an owner if the org deliberately runs below the baseline.",
+      "acceptance": "Health Check no longer lists this setting as a risk, or the deviation is recorded as an accepted exception with an owner. This is org security posture, not agent blast radius: it is reported and ticketed but does not move the D4 score."
+    },
+    "D1.OPTIMIZER_UNUSED_FIELD": {
+      "epic": "Retire unreferenced fields",
+      "points": 3,
+      "remediation": "1. Confirm against Optimizer's own report which records and components it checked — it sees the whole org, including layouts and dependencies OrgIQ cannot read from source.\n2. Deprecate before deleting: remove the field from page layouts and permission sets and let a full business cycle pass.\n3. Delete it, or keep it and describe what it is for so it stops competing with live fields for retrieval.",
+      "acceptance": "Field is deleted, or retained with a documented reason and hidden from the agent's layouts and permissions. A re-run of Optimizer no longer lists it as unused."
+    },
+    "D4.OPTIMIZER_PERMISSION_RISK": {
+      "epic": "Reduce profile and permission-set sprawl",
+      "points": 5,
+      "remediation": "1. Review the profile or permission set Optimizer flagged and list who actually holds it.\n2. Consolidate overlapping grants and remove the ones no live user or integration needs.\n3. Re-test the agent's own permission set against the tightened model.",
+      "acceptance": "A re-run of Optimizer no longer flags this profile or permission set, and the agent's own access is unchanged or narrower."
+    }
+  }
+}

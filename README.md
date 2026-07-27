@@ -93,15 +93,31 @@ Source mode is the only mode. `scanner/` walks the directory you point it at wit
 | `*.cls` | `metadata.parse_apex` | D3 (`@InvocableMethod` count and labels, test classes); body text for `D1.UNREFERENCED_FIELD` |
 | `*.trigger` | `metadata.parse_triggers` | D5 (triggers per object, loop and recursion-guard heuristics); body text for `D1.UNREFERENCED_FIELD` |
 | `*.permissionset-meta.xml` | `metadata.parse_permission_sets` | D4 (`ModifyAllData`, `ViewAllData`, per-object grants) |
+| `*.profile-meta.xml` | `metadata.parse_profiles` | persona surfaces (object rights, layout assignments, flow access) |
+| `*.layout-meta.xml` | `metadata.parse_layouts` | persona surfaces (which fields are actually put in front of a persona, and which buttons) |
+| `*.validationRule-meta.xml` | `metadata.parse_validation_rules` | persona surfaces (what will refuse a persona's save) |
+| `*.approvalProcess-meta.xml` | `metadata.parse_approval_processes` | persona surfaces (the processes a persona takes part in) |
 | `*.report-meta.xml`, `*.dashboard-meta.xml` | `metadata.parse_reports` | blast-radius weighting of D1 findings; gates `D1.UNREFERENCED_FIELD` |
 
 D2 has no glob. There is no file in an SFDX repository that carries fill rates,
 record staleness or duplicate counts.
 
-Everything else in an org is invisible from here: profiles, page layouts, validation
-rules, formula and roll-up references, sharing rules, custom metadata types, LWC and
-Aura, managed packages, external integrations, Setup Audit Trail,
-`MetadataComponentDependency`, and all record data. That list is the reason several
+The five persona-facing globs are read together rather than separately, because no
+one of them answers the question. A **capability surface** is what a profile grants,
+narrowed by the layouts it is actually assigned, plus the flows it can start, the
+approvals it takes part in and the validation rules that will refuse its saves. An
+agent runs as a persona and can therefore do exactly what that persona can do, so the
+surface *is* the answer to "what can this agent reach?" — and `OrgIQ_Persona__c`
+records every one of them, not only the ones a rule objected to. Two limits are
+stated on the record rather than hidden: effective access is profile plus permission
+sets plus permission set groups minus muting, and metadata alone does not say which
+users hold which, so a surface is the access a persona **grants**, not what a named
+person ended up with; and sharing rules decide record-level visibility on a different
+axis that nothing here models.
+
+Everything else in an org is invisible from here: formula and roll-up references,
+sharing rules, custom metadata types, LWC and Aura, managed packages, external
+integrations, Setup Audit Trail, `MetadataComponentDependency`, and all record data. That list is the reason several
 rules cap their own confidence, and the reason `D1.UNREFERENCED_FIELD` returns nothing
 at all unless report or dashboard metadata was found — with no evidence of consumption,
 an unused field and an unobserved field look identical.
@@ -379,15 +395,26 @@ SFORGIQ/
   README.md              this file
   PRD.md                 full specification, v0.7
   sfdx-project.json      SFDX config so the objects can be deployed
-  scanner/               CLI entry point + all 22 rules, stdlib only
+  scanner/               CLI entry point + every rule, stdlib only
     orgiq_spike.py       CLI, field parsing, the 6 D1 rules, report weighting
-    rules_ext.py         the D2-D5 rule packs (3 + 4 + 4 + 5 rules)
+    rules_ext.py         the D2-D5 rule packs
     metadata.py          SFDX parsers: Flows, Apex, triggers, permission sets,
+                         profiles, layouts, validation rules, approval processes,
                          reports/dashboards; the Apex body heuristics
+    persona.py           capability surfaces (what an identity can actually do)
+                         and blast radius (what depends on a component)
+    drift.py             cross-org drift: where an estate disagrees with itself
+    lifecycle.py         survival — how many consecutive scans a finding lived through
+    effort.py            evidence-responsive effort estimates + the calibration loop
+    rubric.py            loads rubric.json; the judgement half, kept out of the engine
+    rubric.json          bands, penalties, the emission gate, the effort model and
+                         the 35-entry remediation playbook — data, not code, so a
+                         practitioner can tune it and a port carries the engine only
     density.py           semantic density + grounding-payload ESTIMATES (no tokenizer)
     backlog.py           Jira-importable backlog CSV emitter (threshold-gated)
     scan_result.py       assembles the full scan record set (Salesforce schema)
-    scan_portfolio.py    generates the synthetic 24-org demo portfolio in memory
+    enterprises.py       the two demo estates: schemas, orgs, personas, rules
+    scan_portfolio.py    generates the demo portfolio in memory
   fixtures/
     seed_data.py         fixture data generator (D2 record data)
     gen_messy_org.py     generates the messy-org metadata fixture
@@ -397,8 +424,11 @@ SFORGIQ/
     force-app/           3 custom objects (38 fields in source, 32 deployed),
                          OrgIQ_Admin permission set, Connected App, CORS origin,
                          Security settings (OAuth-endpoint CORS)
-    load_scan.py         idempotent Bulk-API loader (scan result JSON -> org)
-    load_portfolio.py    the same, for the 24-org portfolio
+    load_scan.py         idempotent Bulk-API loader (scan result JSON -> org),
+                         incl. the finding lifecycle and the survival recompute
+    load_portfolio.py    the same, for a whole portfolio
+    calibration_kit.py   worksheet / import / report — the routes real effort
+                         numbers arrive by (actual, expert, survival)
   dashboard/             React portfolio dashboard; deployed to GitHub Pages
     src/views/           PortfolioView (overview) + OrgDetail (drill-down)
     src/lib/sfConfig.js  hardcoded OAuth client id — see Traps before redeploying

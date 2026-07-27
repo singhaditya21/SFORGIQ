@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Flow_Names__c</fullName>
+    <description>The processes this persona can start, by name.</description>
+    <label>Flow Names</label>
+    <length>5000</length>
+    <type>LongTextArea</type>
+    <visibleLines>4</visibleLines>
+</CustomField>

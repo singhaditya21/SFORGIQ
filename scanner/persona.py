@@ -29,6 +29,7 @@ record-level visibility on a different axis entirely; nothing here models them.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field as dc_field
 
 
@@ -218,3 +219,122 @@ def persona_findings(personas) -> list:
                 f"required by an agent, and irreversible when it is wrong",
                 " | ".join(p.objects_deletable[:8])))
     return out
+
+
+# ---------------------------------------------------- the surface itself
+
+# OrgIQ_Persona__c.Summary__c is Text(255), and the editable-object list is a
+# Long Text clipped so one runaway profile cannot dominate a record.
+SUMMARY_MAX = 255
+_OBJECT_LIST_MAX = 20
+
+
+def _field_totals(fields) -> dict:
+    """How many fields each object actually has — the denominator in "sees 40 of
+    120". Without it a visible-field count is a number with nothing to be a
+    fraction of, which is the difference between a fact and a statistic."""
+    totals = {}
+    for f in fields or ():
+        obj = getattr(f, "object_name", "") or ""
+        if obj:
+            totals[obj] = totals.get(obj, 0) + 1
+    return totals
+
+
+def _available_fields(persona, totals) -> int:
+    return sum(totals.get(obj, 0) for obj in persona.objects_readable)
+
+
+def summarise(persona, totals) -> str:
+    """The persona in one sentence, in the shape a reviewer recognises.
+
+    Two things are deliberately not said. A permission set carries no layout
+    assignments, so it has no visible-field count — and reporting that as "sees
+    0 fields" would read as a finding when it is a property of where layouts
+    live. And a persona with blanket access is described by that and nothing
+    else: counting its objects would imply a boundary it does not have.
+    """
+    if persona.unbounded:
+        return (f"{' and '.join(persona.blanket_perms)} — reaches every record of "
+                f"every object, whatever sharing says")
+
+    bits = []
+    if persona.objects_editable:
+        head = ", ".join(persona.objects_editable[:3])
+        more = len(persona.objects_editable) - 3
+        bits.append(f"edits {head}" + (f" and {more} more" if more > 0 else ""))
+    else:
+        bits.append("edits nothing")
+
+    available = _available_fields(persona, totals)
+    if persona.fields_visible:
+        seen = len(persona.fields_visible)
+        bits.append(f"sees {seen} of {available} fields" if available
+                    else f"sees {seen} fields")
+    elif persona.kind == "PermissionSet":
+        # Not a gap in the persona — a permission set never assigns layouts.
+        bits.append("no layouts of its own")
+    else:
+        bits.append("no layout assigned")
+
+    if persona.flows:
+        bits.append(f"starts {len(persona.flows)} flow(s)")
+    if persona.approvals:
+        bits.append(f"takes part in {len(persona.approvals)} approval(s)")
+    if persona.blocked_by:
+        bits.append(f"{len(persona.blocked_by)} validation rule(s) can block it")
+    if persona.objects_deletable:
+        bits.append(f"deletes on {len(persona.objects_deletable)}")
+
+    text = " · ".join(bits)
+    return text if len(text) <= SUMMARY_MAX else text[:SUMMARY_MAX - 3] + "..."
+
+
+def _persona_external_id(scan_external_id: str, persona) -> str:
+    """Scoped to the scan for the same reason a finding id is: an org holds many
+    scans, and a persona is what that scan saw, not a standing fact."""
+    digest = hashlib.sha1(f"{persona.kind}:{persona.name}".encode("utf-8")).hexdigest()[:10]
+    return f"PERSONA-{scan_external_id}-{digest}"
+
+
+def surface_rows(personas, scan_external_id: str, fields=()) -> list:
+    """Capability surfaces as loadable records.
+
+    These are not findings. A finding says something is wrong; a surface says
+    what a persona can do, and most of them are entirely correct. Emitting them
+    as records is what lets a reviewer check the ones that are fine — which is
+    the question actually being asked of an agent's permissions, and one a
+    backlog of problems cannot answer.
+    """
+    totals = _field_totals(fields)
+    rows = []
+    for p in personas:
+        rows.append({
+            "external_persona_id": _persona_external_id(scan_external_id, p),
+            "name": p.name,
+            "persona_kind": p.kind,
+            "unbounded": p.unbounded,
+            "blanket_perms": ", ".join(p.blanket_perms),
+            "reach": p.reach,
+            "objects_editable": len(p.objects_editable),
+            "objects_readable": len(p.objects_readable),
+            "objects_deletable": len(p.objects_deletable),
+            # None, not 0, when this kind of persona cannot have one: a permission
+            # set assigns no layouts, so its visible-field count is unknown rather
+            # than zero, and the two must not render the same.
+            "fields_visible": (len(p.fields_visible) if p.fields_visible
+                               or p.kind == "Profile" else None),
+            "fields_available": _available_fields(p, totals),
+            "flows": len(p.flows),
+            "approvals": len(p.approvals),
+            "blocked_by": len(p.blocked_by),
+            "actions": len(p.actions),
+            "editable_objects": " | ".join(p.objects_editable[:_OBJECT_LIST_MAX]),
+            "flow_names": " | ".join(p.flows[:_OBJECT_LIST_MAX]),
+            "blocking_rules": " | ".join(p.blocked_by[:_OBJECT_LIST_MAX]),
+            "summary": summarise(p, totals),
+        })
+    # Widest first: the persona worth reviewing is the one that reaches furthest,
+    # and an alphabetical list buries it among the narrow ones.
+    rows.sort(key=lambda r: (not r["unbounded"], -r["reach"], r["name"]))
+    return rows

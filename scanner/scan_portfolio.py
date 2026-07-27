@@ -35,6 +35,7 @@ import random
 
 import backlog                         # gate + row shaping for the Jira CSV
 import drift as drift_mod
+import lifecycle
 import persona as persona_mod
 import density                         # REMOVABLE_KEYS — the payload breakdown buckets
 import enterprises
@@ -242,8 +243,101 @@ def gen_report_refs(fields, r, rnd) -> md.ReportRefs:
     return refs
 
 
+def gen_personas(industry, objects, fields, r, rnd, flows):
+    """Profiles, the screens they are given, and the rules and processes that
+    constrain them.
+
+    The estate used to carry one blanket permission set and nothing else, so the
+    persona model — which reads profiles, layouts, flows, approvals and
+    validation rules — was being fed a fifth of its inputs and every surface it
+    produced came out the same shape.
+
+    Degradation is the same principle the schema generator uses: start from the
+    access a job actually needs, then let a messy org accumulate. A high defect
+    ratio widens a persona's edit rights onto objects nobody built it a screen
+    for, and narrows the share of each object its layout actually surfaces.
+    Both are what fifteen years of "just give them access" looks like, and
+    neither is a defect planted directly — the D4 rules have to find it.
+    """
+    present = set(objects)
+    layouts, profiles, vrules, approvals = [], [], [], []
+
+    by_object = {}
+    for f in fields:
+        by_object.setdefault(f.object_name, []).append(f.api_name)
+
+    # A layout surfaces a share of the object, and the share falls as the org
+    # gets messier: fields kept being added, the screen did not keep up. This is
+    # the gap that makes "sees 34 of 61 fields" a sentence worth reading.
+    share = max(0.25, 0.8 - 0.45 * r)
+    for obj in objects:
+        own = by_object.get(obj, [])
+        if not own:
+            continue
+        shown = own[:max(1, int(len(own) * share))]
+        layouts.append(md.LayoutMeta(
+            api_name=f"{obj}-{obj} Layout", object_name=obj,
+            fields=tuple(shown),
+            actions=("Edit", "Clone") + (("Submit for Approval",)
+                                         if rnd.random() > r else ())))
+    layout_of = {l.object_name: l.api_name for l in layouts}
+    flow_names = [f.api_name for f in flows]
+
+    for spec in enterprises.PERSONAS.get(industry, []):
+        edits = [o for o in spec["edits"] if o in present]
+        reads = [o for o in spec["reads"] if o in present]
+        if not edits and not reads:
+            # An acquired instance on an unrelated schema never had the parent's
+            # profiles. Emitting them anyway produced surfaces that edit nothing
+            # and see nothing — four rows of noise per divergent org, and a
+            # reviewer would rightly read them as a broken parse.
+            continue
+        laid_out = [o for o in spec.get("laid_out", spec["edits"]) if o in layout_of]
+
+        # Accumulated access: rights on objects this role has no screen for.
+        # Drawn from what the org actually has, so a small org cannot sprout
+        # access to objects that do not exist in it.
+        spare = [o for o in objects if o not in edits and o not in reads]
+        rnd.shuffle(spare)
+        edits = edits + spare[:int(len(spare) * r)]
+
+        obj_perms = [md.ObjectPerm(object_name=o, allow_edit=True,
+                                   allow_delete=o in spec.get("deletes", []))
+                     for o in edits]
+        obj_perms += [md.ObjectPerm(object_name=o) for o in reads if o not in edits]
+
+        profiles.append(md.ProfileMeta(
+            api_name=spec["api"], label=spec["label"],
+            object_perms=obj_perms,
+            layout_assignments=tuple(layout_of[o] for o in laid_out),
+            # A role runs the automation its own job depends on, not all of it.
+            flow_access=tuple(flow_names[:rnd.randint(0, min(3, len(flow_names)))]),
+        ))
+
+    for obj, rules in enterprises.VALIDATION_RULES.get(industry, {}).items():
+        if obj not in present:
+            continue
+        for api, message in rules:
+            vrules.append(md.ValidationRuleMeta(
+                api_name=api, object_name=obj,
+                # A deactivated rule still ships in the metadata and constrains
+                # nobody. Messier orgs have more of them, and the persona model
+                # already refuses to count them.
+                active=rnd.random() > r * 0.3,
+                error_message=message))
+
+    for api, obj in enterprises.APPROVALS.get(industry, []):
+        if obj in present:
+            approvals.append(md.ApprovalProcessMeta(
+                api_name=api, object_name=obj, label=api.replace("_", " "),
+                active=True))
+
+    return layouts, profiles, vrules, approvals
+
+
 def gen_org_metadata(objects, fields, r, rnd, mode="Org",
-                     dup_signal=True, report_metadata=True) -> md.OrgMetadata:
+                     dup_signal=True, report_metadata=True,
+                     industry="") -> md.OrgMetadata:
     """Build the Flow / Apex / trigger / permission-set / report material for one org.
 
     These are the *same structures* the SFDX parsers produce, and the *same*
@@ -366,9 +460,15 @@ def gen_org_metadata(objects, fields, r, rnd, mode="Org",
     # this portfolio already ships stayed byte-identical.
     refs = gen_report_refs(fields, r, rnd) if report_metadata else md.ReportRefs()
 
+    # After every draw above, so adding personas left the existing D1-D5 corpus
+    # byte-identical — the same discipline the report references were added under.
+    layouts, profiles, vrules, approvals = gen_personas(
+        industry, objects, fields, r, rnd, flows)
+
     meta = md.OrgMetadata(flows=flows, apex=apex, triggers=triggers,
                           permission_sets=perms, record_stats=stats,
-                          report_refs=refs)
+                          report_refs=refs, layouts=layouts, profiles=profiles,
+                          validation_rules=vrules, approval_processes=approvals)
     if stats and not dup_signal:
         # The explicit verdict an org collector would have logged. Inference
         # would reach the same answer from `unavailable`; the log is what carries
@@ -597,7 +697,8 @@ def build_portfolio():
             org_meta = gen_org_metadata(objects, fields, ratio, random.Random(5000 + i),
                                         mode=m,
                                         dup_signal=name not in AUTONUMBER_NAME_ORGS,
-                                        report_metadata=name not in NO_REPORT_METADATA_ORGS)
+                                        report_metadata=name not in NO_REPORT_METADATA_ORGS,
+                                        industry=ent["industry"])
             # D1's own signal. metadata.py cannot see Field — it is owned by the
             # scanner — so without this the registry reports D1 as having no schema
             # to read and the portfolio's strongest dimension scores nothing.
@@ -626,6 +727,7 @@ def build_portfolio():
                                            code_tokens=code_tokens,
                                            coverage=org_meta.coverage(),
                                            org_type=org_type, blast=blast,
+                                           personas=personas,
                                            org_overrides={"last_refreshed": refreshed,
                                                           "notes": notes}))
             orgs.append((name, findings))
@@ -648,7 +750,8 @@ def build_portfolio():
                 pm = gen_org_metadata(sorted({f.object_name for f in pf}), pf, worse,
                                       random.Random(5000 + i), mode=m,
                                       dup_signal=name not in AUTONUMBER_NAME_ORGS,
-                                      report_metadata=name not in NO_REPORT_METADATA_ORGS)
+                                      report_metadata=name not in NO_REPORT_METADATA_ORGS,
+                                      industry=ent["industry"])
                 pm.field_count = len(pf)
                 pct = scanner.code_identifiers(pm)
                 pfind = scanner.all_d1_findings(pf, pm.report_refs, pct)
@@ -666,6 +769,7 @@ def build_portfolio():
                     assessed_dims=frozenset({"D1"} | pm.assessable_dims()),
                     report_refs=pm.report_refs, code_tokens=pct,
                     coverage=pm.coverage(), now=past, org_type=org_type, blast=pblast,
+                    personas=ppersonas,
                     org_overrides={"last_refreshed": refreshed, "notes": notes}))
         # Drift is an estate-level question: it needs every org in the estate,
         # so it runs once they all exist rather than per org as they are built.
@@ -674,6 +778,10 @@ def build_portfolio():
             orgs[oi] = (org_name, orgs[oi][1] + dfs)
             scans[si]["findings"].extend(
                 scan_result.finding_rows(dfs, scans[si]["scan"]["external_scan_id"]))
+    # Last, and after drift: survival is counted over every finding a scan
+    # reported, and a drift finding added afterwards would otherwise be the one
+    # kind of defect that could never be seen to persist.
+    lifecycle.annotate_portfolio(scans)
     return scans, orgs
 
 

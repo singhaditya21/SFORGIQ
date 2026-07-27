@@ -68,8 +68,17 @@ def main():
         "Dimension__c, Severity__c, Confidence__c, Component_Type__c, "
         "Component_Api_Name__c, Evidence__c, Remediation__c, Epic__c, "
         "Acceptance_Criteria__c, Source__c, Effort_Points__c, Effort_Basis__c, Actual_Effort_Points__c, "
-        "Blast_Radius__c, Emits_To_Backlog__c, Rule_Maturity__c, Status__c "
+        "Blast_Radius__c, Emits_To_Backlog__c, Rule_Maturity__c, Status__c, "
+        "Survived_Scans__c, Resolved_In_Scan__c "
         "FROM OrgIQ_Finding__c", org)
+
+    personas = query(
+        "SELECT Scan__r.External_Scan_Id__c, Name, Persona_Kind__c, Summary__c, "
+        "Unbounded__c, Blanket_Perms__c, Reach__c, Objects_Editable__c, "
+        "Objects_Readable__c, Objects_Deletable__c, Fields_Visible__c, "
+        "Fields_Available__c, Flows__c, Approvals__c, Blocked_By__c, Actions__c, "
+        "Editable_Objects__c, Flow_Names__c, Blocking_Rules__c "
+        "FROM OrgIQ_Persona__c ORDER BY Unbounded__c DESC, Reach__c DESC", org)
 
     dims_by_scan = defaultdict(list)
     for d in dims:
@@ -109,6 +118,37 @@ def main():
             "emitsToBacklog": f["Emits_To_Backlog__c"],
             "ruleMaturity": f["Rule_Maturity__c"],
             "status": f["Status__c"],
+            # null, not 0, where no scan history could establish a run — the
+            # dashboard has to be able to say "not measured" rather than "new".
+            "survivedScans": f["Survived_Scans__c"],
+            "resolvedInScan": f["Resolved_In_Scan__c"] or "",
+        })
+
+    def splitlist(text):
+        return [p for p in (text or "").split(" | ") if p]
+
+    personas_by_scan = defaultdict(list)
+    for p in personas:
+        personas_by_scan[p["Scan__r"]["External_Scan_Id__c"]].append({
+            "name": p["Name"],
+            "kind": p["Persona_Kind__c"],
+            "summary": p["Summary__c"] or "",
+            "unbounded": p["Unbounded__c"],
+            "blanketPerms": p["Blanket_Perms__c"] or "",
+            "reach": p["Reach__c"],
+            "objectsEditable": p["Objects_Editable__c"],
+            "objectsReadable": p["Objects_Readable__c"],
+            "objectsDeletable": p["Objects_Deletable__c"],
+            # Genuinely null for a permission set — see the field's own note.
+            "fieldsVisible": p["Fields_Visible__c"],
+            "fieldsAvailable": p["Fields_Available__c"],
+            "flows": p["Flows__c"],
+            "approvals": p["Approvals__c"],
+            "blockedBy": p["Blocked_By__c"],
+            "actions": p["Actions__c"],
+            "editableObjects": splitlist(p["Editable_Objects__c"]),
+            "flowNames": splitlist(p["Flow_Names__c"]),
+            "blockingRules": splitlist(p["Blocking_Rules__c"]),
         })
 
     out = {"source": "salesforce", "scans": []}
@@ -139,12 +179,15 @@ def main():
             },
             "dimensions": dim_rows,
             "findings": finds_by_scan[sid],
+            "personas": personas_by_scan[sid],
         })
 
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(out, fh, separators=(",", ":"))
     nf = sum(len(s["findings"]) for s in out["scans"])
-    print(f"wrote {a.out}: {len(out['scans'])} scans, {nf} findings")
+    np_ = sum(len(s["personas"]) for s in out["scans"])
+    print(f"wrote {a.out}: {len(out['scans'])} scans, {nf} findings, "
+          f"{np_} persona surfaces")
 
 
 if __name__ == "__main__":

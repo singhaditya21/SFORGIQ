@@ -33,20 +33,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import rubric
+
 # Bumped whenever a multiplier or the scale changes, so an actual recorded
 # against an old estimate is never silently compared with a new model.
-MODEL_VERSION = "effort-0.2-uncalibrated"
+MODEL_VERSION = rubric.EFFORT_MODEL_VERSION
 
 # The scale the playbook already speaks. Estimates snap to it: a model that
 # emits 4.7 implies a precision none of this has.
-SCALE = (1, 2, 3, 5, 8, 13, 21)
+SCALE = rubric.EFFORT_SCALE
 
 # How many dependants make a fix meaningfully harder. Coarse on purpose — the
 # evidence supports "more consumers means more coordination", not a curve.
-_BLAST_BANDS = ((16, 2.0, "16+ dependants — every consumer has to be cleared first"),
-                (6, 1.5, "6-15 dependants — consumers must be checked before the change"),
-                (1, 1.0, "few dependants"),
-                (0, 1.0, "no dependency data"))
+_BLAST_BANDS = rubric.BLAST_BANDS
 
 # Changing the org of record costs more than changing a sandbox: a release
 # window, change control, and the rollback plan someone will actually ask for.
@@ -57,9 +56,7 @@ _BLAST_BANDS = ((16, 2.0, "16+ dependants — every consumer has to be cleared f
 # a factor is big enough to matter alone, or it is here only to compound with
 # others, and 1.1 is exactly that: a shared environment adds a little, and shows
 # up only when something else has already pushed the estimate to a boundary.
-_ORG_TYPE = {"Production": (1.5, "production change control"),
-             "UAT": (1.1, "shared environment"),
-             "Staging": (1.1, "shared environment")}
+_ORG_TYPE = rubric.ORG_TYPE_FACTOR
 
 
 @dataclass
@@ -91,7 +88,8 @@ def _group_factor(size: int):
     """
     if size <= 1:
         return 1.0, ""
-    factor = min(2.5, 1.0 + 0.25 * (size - 1))
+    g = rubric.GROUP_FACTOR
+    factor = min(g["cap"], 1.0 + g["per_extra_member"] * (size - 1))
     return factor, f"{size}-member cluster"
 
 
@@ -155,7 +153,7 @@ class Calibration:
 
 # Below this the ratios are anecdote. Chosen so a single unusual engagement
 # cannot move the model, and stated rather than buried.
-MIN_SAMPLES = 30
+MIN_SAMPLES = rubric.EFFORT_MIN_SAMPLES
 
 
 def calibrate(records) -> Calibration:

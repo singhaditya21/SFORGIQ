@@ -39,6 +39,15 @@
         <viewAllRecords>true</viewAllRecords>
         <modifyAllRecords>true</modifyAllRecords>
     </objectPermissions>
+    <objectPermissions>
+        <object>OrgIQ_Persona__c</object>
+        <allowRead>true</allowRead>
+        <allowCreate>true</allowCreate>
+        <allowEdit>true</allowEdit>
+        <allowDelete>true</allowDelete>
+        <viewAllRecords>true</viewAllRecords>
+        <modifyAllRecords>true</modifyAllRecords>
+    </objectPermissions>
     <fieldPermissions>
         <field>OrgIQ_Scan__c.Components_Scanned__c</field>
         <readable>true</readable>
@@ -281,6 +290,101 @@
     </fieldPermissions>
     <fieldPermissions>
         <field>OrgIQ_Finding__c.Resolved_In_Scan__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.External_Persona_Id__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Persona_Kind__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Summary__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Unbounded__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Blanket_Perms__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Reach__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Objects_Editable__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Objects_Readable__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Objects_Deletable__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Fields_Visible__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Fields_Available__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Flows__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Approvals__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Blocked_By__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Actions__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Editable_Objects__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Flow_Names__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Persona__c.Blocking_Rules__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>OrgIQ_Finding__c.Survived_Scans__c</field>
         <readable>true</readable>
         <editable>true</editable>
     </fieldPermissions>

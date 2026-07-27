@@ -27,7 +27,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scanner"))
+import lifecycle  # noqa: E402  — the survival arithmetic, shared with the portfolio path
+
 SCAN_OBJ = "OrgIQ_Scan__c"
+PERSONA_OBJ = "OrgIQ_Persona__c"
 FINDING_OBJ = "OrgIQ_Finding__c"
 DIM_OBJ = "OrgIQ_Dimension_Score__c"
 
@@ -69,6 +73,57 @@ def _density_pct(ratio) -> float:
     — while the scan JSON carries a 0..1 ratio. 99.9 is the field's ceiling, so
     a perfectly dense corpus is clamped rather than failing the whole job."""
     return min(round(float(ratio) * 100, 1), 99.9)
+
+
+def _annotate_survival(target_org, org, wait, tmp) -> int:
+    """Recompute survival over every scan this org has, and write it back.
+
+    Every scan is rewritten, not only the newest: a finding's run is a property
+    of the sequence, so a scan arriving out of order — or a re-run that changes
+    what a scan reports — moves numbers on records that were written earlier.
+    """
+    scans = sf(["data", "query", "--query",
+                f"SELECT Id, External_Scan_Id__c, Scan_Timestamp__c FROM {SCAN_OBJ} "
+                f"WHERE Target_Org__c = '{target_org.replace(chr(39), chr(92) + chr(39))}'",
+                "--target-org", org]).get("records", [])
+    if len(scans) < 2:
+        return 0          # nothing to compare against; a run of 1 is not evidence
+
+    rows = sf(["data", "query", "--query",
+               f"SELECT Id, Scan__r.External_Scan_Id__c, Rule_Id__c, "
+               f"Component_Api_Name__c, Evidence__c, Emits_To_Backlog__c "
+               f"FROM {FINDING_OBJ} WHERE Scan__r.Target_Org__c = "
+               f"'{target_org.replace(chr(39), chr(92) + chr(39))}'",
+               "--target-org", org]).get("records", [])
+
+    by_scan = {}
+    for r in rows:
+        by_scan.setdefault(r["Scan__r"]["External_Scan_Id__c"], []).append({
+            "Id": r["Id"], "rule_id": r["Rule_Id__c"],
+            "component_api_name": r["Component_Api_Name__c"],
+            "evidence": r["Evidence__c"] or "",
+            "emits_to_backlog": r["Emits_To_Backlog__c"],
+        })
+
+    shaped = [{"scan": {"external_scan_id": s["External_Scan_Id__c"],
+                        "target_org": target_org,
+                        "scan_timestamp": s["Scan_Timestamp__c"]},
+               "findings": by_scan.get(s["External_Scan_Id__c"], [])}
+              for s in scans]
+    lifecycle.annotate(shaped)
+
+    updates = [{"Id": f["Id"], "Survived_Scans__c": f.get("survived_scans", ""),
+                "Resolved_In_Scan__c": f.get("resolved_in_scan", "")}
+               for s in shaped for f in s["findings"]]
+    if not updates:
+        return 0
+    _write_csv(tmp / "survival.csv",
+               ["Id", "Survived_Scans__c", "Resolved_In_Scan__c"], updates)
+    print(f"\u2192 recomputing survival across {len(scans)} scan(s) of this org\u2026")
+    sf(["data", "update", "bulk", "--sobject", FINDING_OBJ, "--file",
+        str(tmp / "survival.csv"), "--target-org", org, "--wait", wait])
+    return sum(1 for s in shaped for f in s["findings"]
+               if f.get("emits_to_backlog") and (f.get("survived_scans") or 0) >= 3)
 
 
 def main():
@@ -224,9 +279,61 @@ def main():
     sf(["data", "import", "bulk", "--sobject", DIM_OBJ, "--file",
         str(tmp / "dims.csv"), "--target-org", org, "--wait", a.wait])
 
+    # 5) Replace this scan's persona surfaces -----------------------------
+    #
+    # Deleted and re-inserted rather than upserted: a persona that no longer
+    # exists in the org has to disappear from the scan, and an upsert keyed on
+    # the external id would leave it sitting there looking current.
+    personas = data.get("personas", [])
+    old_p = sf(["data", "query", "--query",
+                f"SELECT Id FROM {PERSONA_OBJ} WHERE Scan__c='{scan_id}'",
+                "--target-org", org]).get("records", [])
+    if old_p:
+        _write_csv(tmp / "p_del.csv", ["Id"], [{"Id": r["Id"]} for r in old_p])
+        sf(["data", "delete", "bulk", "--sobject", PERSONA_OBJ, "--file",
+            str(tmp / "p_del.csv"), "--target-org", org, "--wait", a.wait])
+    if personas:
+        p_cols = ["External_Persona_Id__c", "Scan__c", "Name", "Persona_Kind__c",
+                  "Summary__c", "Unbounded__c", "Blanket_Perms__c", "Reach__c",
+                  "Objects_Editable__c", "Objects_Readable__c", "Objects_Deletable__c",
+                  "Fields_Visible__c", "Fields_Available__c", "Flows__c",
+                  "Approvals__c", "Blocked_By__c", "Actions__c",
+                  "Editable_Objects__c", "Flow_Names__c", "Blocking_Rules__c"]
+        _write_csv(tmp / "personas.csv", p_cols, [{
+            "External_Persona_Id__c": p["external_persona_id"], "Scan__c": scan_id,
+            "Name": p["name"][:80], "Persona_Kind__c": p["persona_kind"],
+            "Summary__c": p["summary"], "Unbounded__c": _b(p["unbounded"]),
+            "Blanket_Perms__c": p["blanket_perms"], "Reach__c": p["reach"],
+            "Objects_Editable__c": p["objects_editable"],
+            "Objects_Readable__c": p["objects_readable"],
+            "Objects_Deletable__c": p["objects_deletable"],
+            # "" not 0: a permission set assigns no layouts, so the count is
+            # unknown rather than none, and the field must hold null.
+            "Fields_Visible__c": ("" if p["fields_visible"] is None
+                                  else p["fields_visible"]),
+            "Fields_Available__c": p["fields_available"], "Flows__c": p["flows"],
+            "Approvals__c": p["approvals"], "Blocked_By__c": p["blocked_by"],
+            "Actions__c": p["actions"], "Editable_Objects__c": p["editable_objects"],
+            "Flow_Names__c": p["flow_names"], "Blocking_Rules__c": p["blocking_rules"],
+        } for p in personas])
+        print(f"\u2192 inserting {len(personas)} persona surface(s)\u2026")
+        sf(["data", "import", "bulk", "--sobject", PERSONA_OBJ, "--file",
+            str(tmp / "personas.csv"), "--target-org", org, "--wait", a.wait])
+
+    # 6) Survival, from the org's own scan history -------------------------
+    #
+    # The one calibration input that needs nobody's cooperation: how many
+    # consecutive scans have reported the same defect. The portfolio path
+    # computes this in memory because it holds every scan at once; here the
+    # history lives in the org, so it is read back and run through the same
+    # arithmetic rather than a second implementation of it.
+    stuck = _annotate_survival(scan["target_org"], org, a.wait, tmp)
+
     print(f"\nloaded scan {scan['external_scan_id']} into {org}: "
           f"1 scan, {len(f_rows)} findings, {len(d_rows)} dimension scores, "
-          f"{len(moves)} status change(s)")
+          f"{len(personas)} persona surface(s), {len(moves)} status change(s)"
+          + (f", {stuck} finding(s) now on their 3rd+ consecutive scan" if stuck
+             else ""))
 
 
 if __name__ == "__main__":

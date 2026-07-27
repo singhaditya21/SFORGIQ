@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Fields_Available__c</fullName>
+    <description>Fields on the objects this persona may read — the denominator that makes the visible count a fraction rather than a bare number.</description>
+    <label>Fields Available</label>
+    <precision>9</precision>
+    <scale>0</scale>
+    <required>false</required>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

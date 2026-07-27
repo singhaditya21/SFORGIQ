@@ -565,6 +565,77 @@ export function driftByOrg(scans) {
   return rows.sort((a, b) => rank[a.worst] - rank[b.worst] || b.findings.length - a.findings.length)
 }
 
+// ---- persona surfaces --------------------------------------------------
+//
+// An agent runs as a persona, so what an agent can reach IS what its persona can
+// reach. Findings answer only half of that question — they say which personas
+// are wrong. The surface answers the other half, which is the one a reviewer
+// signing off an agent actually asks: what can this identity do, and is that the
+// job it has?
+
+// Estate-wide, from the newest scan of each org. A persona is per-org: the same
+// role can be bounded in production and wide open in a sandbox, and merging them
+// would report a reach no org has.
+export function personaRows(scans) {
+  const rows = []
+  for (const s of latestScans(scans)) {
+    for (const p of s.personas || []) {
+      rows.push({ ...p, org: s.scan.targetOrg, scanId: s.scan.externalId })
+    }
+  }
+  return rows.sort((a, b) => (b.unbounded ? 1 : 0) - (a.unbounded ? 1 : 0)
+    || (b.reach ?? 0) - (a.reach ?? 0))
+}
+
+// The share of what a persona may read that is actually put in front of it.
+// null — not 0 — where the question does not apply: a permission set assigns no
+// layouts, so it has no visible-field count, and rendering that as 0% would read
+// as a finding about the persona rather than a fact about where layouts live.
+export function shownShare(p) {
+  if (p.fieldsVisible == null || !p.fieldsAvailable) return null
+  return p.fieldsVisible / p.fieldsAvailable
+}
+
+export function personaStats(rows) {
+  const unbounded = rows.filter((p) => p.unbounded)
+  const shares = rows.map(shownShare).filter((v) => v != null)
+  return {
+    total: rows.length,
+    unbounded: unbounded.length,
+    canDelete: rows.filter((p) => p.objectsDeletable > 0).length,
+    // Median, not mean: one blanket persona that can see everything would drag
+    // an average until the typical persona became unreadable.
+    medianShown: shares.length
+      ? shares.sort((a, b) => a - b)[Math.floor(shares.length / 2)]
+      : null,
+    withProcess: rows.filter((p) => p.approvals > 0 || p.flows > 0).length,
+  }
+}
+
+// ---- survival ----------------------------------------------------------
+//
+// How many consecutive scans a finding has been reported by. It is not effort
+// and is never presented as it: what it says is which findings the backlog has
+// stopped moving on, which is observable from scans already held and needs
+// nobody to record anything.
+export const STUCK_SCANS = 3
+
+export function survivalStats(scans) {
+  const ticketed = []
+  for (const s of latestScans(scans)) {
+    for (const f of s.findings) {
+      if (f.emitsToBacklog && f.survivedScans) ticketed.push(f)
+    }
+  }
+  const stuck = ticketed.filter((f) => f.survivedScans >= STUCK_SCANS)
+  return {
+    measured: ticketed.length,
+    stuck: stuck.length,
+    longest: ticketed.reduce((m, f) => Math.max(m, f.survivedScans), 0),
+    stuckEffort: stuck.reduce((n, f) => n + (f.effortPoints || 0), 0),
+  }
+}
+
 export function latestScans(scans) {
   const best = new Map()
   for (const s of scans) {
