@@ -88,7 +88,8 @@ export default function PortfolioView({ data }) {
 
   const drillLabel = filter.rule ? ruleLabel(filter.rule)
     : filter.dimension ? `${filter.dimension} findings`
-      : filter.severity ? `${filter.severity}-severity findings` : ''
+      : filter.severity ? `${filter.severity}-severity findings`
+        : filter.role ? `${filter.role}'s queue` : ''
 
   return (
     <>
@@ -182,7 +183,8 @@ export default function PortfolioView({ data }) {
               <h2 className="card__title">Who does the work</h2>
               <span className="card__hint">by effort, not ticket count</span>
             </div>
-            <OwnerSplit rows={owners} />
+            <OwnerSplit rows={owners} active={filter.role}
+                        onSelect={(r) => toggle('role', r)} />
           </section>
         )}
 

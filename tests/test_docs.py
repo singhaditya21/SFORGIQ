@@ -105,3 +105,49 @@ def test_the_bundled_portfolio_carries_the_personas_it_claims_to():
     data = json.loads((ROOT / "dashboard/public/portfolio.json").read_text(encoding="utf-8"))
     assert all("personas" in s for s in data["scans"])
     assert sum(len(s["personas"]) for s in data["scans"]) > 0
+
+
+# ------------------------------------------------------------ drill-downs
+
+def js(path):
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def filter_keys(source, name):
+    block = source[source.index(f"{name} = {{"):]
+    return set(re.findall(r"(\w+):\s*null", block[:block.index("}")]))
+
+
+def test_every_portfolio_filter_key_has_a_label_in_the_filter_bar():
+    """FilterBar calls `LABELS[k](v)` immediately, so a key with no entry does
+    not degrade — it throws and takes the page with it. Adding `role` to the
+    filter did exactly that."""
+    keys = filter_keys(js("dashboard/src/lib/data.js"), "EMPTY_FILTER")
+    labels = js("dashboard/src/components/FilterBar.jsx")
+    block = labels[labels.index("const LABELS = {"):]
+    labelled = set(re.findall(r"(\w+):\s*\(v\)", block[:block.index("\n}")]))
+    assert keys <= labelled, f"no chip label for: {sorted(keys - labelled)}"
+
+
+def test_every_org_filter_key_is_actually_applied():
+    """A key nobody filters on is a control that appears to work: the chip
+    shows, the count does not move."""
+    src = js("dashboard/src/lib/data.js")
+    keys = filter_keys(src, "EMPTY_ORG_FILTER")
+    body = src[src.index("export function applyOrgFilter"):]
+    body = body[:body.index("\n}")]
+    unapplied = {k for k in keys if f"f.{k}" not in body}
+    assert not unapplied, f"org filter keys never applied: {sorted(unapplied)}"
+
+
+def test_the_org_page_widgets_are_wired_to_the_filter():
+    """This page was seven static pictures and one drill. Each of these widgets
+    is the entry point to a question someone actually asks — which dimension is
+    dragging the score, which object carries the debt, whose queue this is — and
+    a card you cannot click cannot answer it."""
+    view = js("dashboard/src/views/OrgDetail.jsx")
+    for widget in ("DimensionGrid", "BacklogSummary", "ComponentRollup",
+                   "OwnerSplit", "TrendChart", "ReadinessHero"):
+        start = view.index(f"<{widget}")
+        assert "onSelect" in view[start:start + 300] or "onGate" in view[start:start + 300], \
+            f"{widget} is rendered on the org page with nothing to click"

@@ -1,8 +1,18 @@
 import DimensionRadar from './DimensionRadar.jsx'
 
+function Cell({ dim, clickable, active, onSelect, className, children }) {
+  const Tag = clickable ? 'button' : 'div'
+  return (
+    <Tag className={`${className}${clickable ? ' dim--click' : ''}${active ? ' is-active' : ''}`}
+         {...(clickable ? { onClick: () => onSelect(dim.code), type: 'button' } : {})}>
+      {children}
+    </Tag>
+  )
+}
+
 // The five OrgIQ dimensions. Assessed ones show a score bar; unassessed ones
 // state what signal is missing (honest about coverage — PRD §7.2.4).
-export default function DimensionGrid({ dimensions }) {
+export default function DimensionGrid({ dimensions, active = null, onSelect = null }) {
   const anyAssessed = dimensions.some((d) => d.status === 'Assessed' && d.score != null)
   return (
     <section className="card dims">
@@ -23,7 +33,13 @@ export default function DimensionGrid({ dimensions }) {
                 : d.score <= 60 ? 'mid'
                   : d.score <= 80 ? 'ok' : 'good'
           return (
-            <div key={d.code} className={`dim ${assessed ? '' : 'dim--muted'}`}>
+            // Unassessed dimensions are not clickable: filtering to a
+            // dimension whose rules never ran would show an empty table and
+            // read as "nothing wrong here", which is the opposite of what an
+            // unassessed dimension means.
+            <Cell key={d.code} dim={d} clickable={Boolean(onSelect) && assessed}
+                  active={active === d.code} onSelect={onSelect}
+                  className={`dim ${assessed ? '' : 'dim--muted'}`}>
               <div className="dim__top">
                 <span className="dim__code">{d.code}</span>
                 {d.inComposite && <span className="dim__badge">in composite</span>}
@@ -47,7 +63,7 @@ export default function DimensionGrid({ dimensions }) {
                   <div className="dim__missing">{d.missingSignals}</div>
                 </>
               )}
-            </div>
+            </Cell>
           )
         })}
         </div>

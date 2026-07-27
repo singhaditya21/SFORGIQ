@@ -390,14 +390,16 @@ export function applyFindingFilter(findings, filter) {
     .filter((f) => !filter.dimension || f.dimension === filter.dimension)
     .filter((f) => !filter.rule || f.ruleId === filter.rule)
     .filter((f) => !filter.severity || f.severity === filter.severity)
+    .filter((f) => !filter.role || (f.ownerRole || 'Unassigned') === filter.role)
 }
 
-export const EMPTY_FILTER = { band: null, dimension: null, rule: null, severity: null }
+export const EMPTY_FILTER = { band: null, dimension: null, rule: null, severity: null,
+                              role: null }
 export function filterIsActive(f) {
-  return !!(f.band || f.dimension || f.rule || f.severity)
+  return !!(f.band || f.dimension || f.rule || f.severity || f.role)
 }
 export function findingFilterActive(f) {
-  return !!(f.dimension || f.rule || f.severity)
+  return !!(f.dimension || f.rule || f.severity || f.role)
 }
 
 // One row per org with its five dimension scores — feeds the heatmap.
@@ -492,6 +494,27 @@ export function ownerBreakdown(findings) {
     by.set(role, row)
   }
   return [...by.values()].sort((a, b) => b.points - a.points)
+}
+
+// The org page's own filter. Deliberately not the portfolio's EMPTY_FILTER:
+// that one filters ACROSS orgs and carries a band, which means nothing when you
+// are already inside one org. What matters here is which slice of this org's
+// findings you are looking at.
+export const EMPTY_ORG_FILTER = { dimension: null, severity: null, epic: null,
+                                  object: null, role: null, rule: null }
+
+export function orgFilterActive(f) {
+  return Object.values(f).some(Boolean)
+}
+
+export function applyOrgFilter(findings, f) {
+  return findings.filter((x) =>
+    (!f.dimension || x.dimension === f.dimension)
+    && (!f.severity || x.severity === f.severity)
+    && (!f.epic || (x.epic || RULE_META[x.ruleId]?.epic) === f.epic)
+    && (!f.object || objectOf(x.component) === f.object)
+    && (!f.role || (x.ownerRole || 'Unassigned') === f.role)
+    && (!f.rule || x.ruleId === f.rule))
 }
 
 export function severityCounts(findings) {

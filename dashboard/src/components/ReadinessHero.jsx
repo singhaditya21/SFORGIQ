@@ -22,7 +22,10 @@ function Gauge({ score, bandKey }) {
   )
 }
 
-export default function ReadinessHero({ scan }) {
+// The gate reason is the single most useful drill on the page — "why is my
+// score capped at 60?" has an answer that is a specific finding, and it was
+// printed as text you could only read.
+export default function ReadinessHero({ scan, onGate = null }) {
   const meta = BAND_META[scan.readinessBand] ?? { key: 'not-ready', blurb: '' }
   return (
     <section className="card hero">
@@ -34,9 +37,14 @@ export default function ReadinessHero({ scan }) {
         <div className={`hero__band hero__band--${meta.key}`}>{scan.readinessBand}</div>
         <p className="hero__blurb">{meta.blurb}</p>
         {scan.gateApplied && (
-          <div className="hero__gate">
-            ⚠ Gate applied — {scan.gateReason}
-          </div>
+          onGate ? (
+            <button className="hero__gate hero__gate--click" onClick={onGate}
+                    title="Show the findings that capped this score">
+              ⚠ Gate applied — {scan.gateReason}
+            </button>
+          ) : (
+            <div className="hero__gate">⚠ Gate applied — {scan.gateReason}</div>
+          )
         )}
         <div className="hero__note">
           Composite is scored over assessed dimensions only. Partially- or

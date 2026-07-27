@@ -7,13 +7,17 @@
 // Points, not ticket counts, drive the ordering and the bar — 300 description
 // edits and 30 trigger rewrites are not the same amount of work, and sorting by
 // count would put the cheapest queue first.
-export default function OwnerSplit({ rows }) {
+export default function OwnerSplit({ rows, active = null, onSelect = null }) {
   if (!rows.length) return <div className="drift__none">No routed work.</div>
   const max = Math.max(...rows.map((r) => r.points), 1)
+  const Row = onSelect ? 'button' : 'div'
   return (
     <div className="owners">
       {rows.map((r) => (
-        <div key={r.role} className="owners__row">
+        <Row key={r.role}
+             className={`owners__row${onSelect ? ' owners__row--click' : ''}`
+               + (active === r.role ? ' is-active' : '')}
+             {...(onSelect ? { onClick: () => onSelect(r.role), type: 'button' } : {})}>
           <span className="owners__role">{r.role}</span>
           <span className="owners__bar">
             <span className="owners__fill" style={{ width: `${(r.points / max) * 100}%` }} />
@@ -23,7 +27,7 @@ export default function OwnerSplit({ rows }) {
             <span className="owners__sub"> · {r.tickets.toLocaleString()} tickets</span>
             {r.critical > 0 && <span className="tag tag--critical">{r.critical} critical</span>}
           </span>
-        </div>
+        </Row>
       ))}
     </div>
   )
