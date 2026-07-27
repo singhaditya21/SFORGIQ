@@ -343,8 +343,18 @@ async function queryPortfolio(tok) {
     'SELECT Scan__r.External_Scan_Id__c,External_Finding_Id__c,Rule_Id__c,Dimension__c,' +
     'Severity__c,Confidence__c,Component_Type__c,Component_Api_Name__c,Evidence__c,' +
     'Remediation__c,Effort_Points__c,Blast_Radius__c,Emits_To_Backlog__c,Rule_Maturity__c,' +
-    'Status__c FROM OrgIQ_Finding__c',
+    'Status__c,Survived_Scans__c,Resolved_In_Scan__c FROM OrgIQ_Finding__c',
     'OrgIQ_Finding__c')
+  // Live mode has to return the same shape demo mode does, or the dashboard
+  // renders less against a real org than it does against the bundled file —
+  // which is the worst possible direction for that difference to run.
+  const people = await soql(tok,
+    'SELECT Scan__r.External_Scan_Id__c,Name,Persona_Kind__c,Summary__c,Unbounded__c,' +
+    'Blanket_Perms__c,Reach__c,Objects_Editable__c,Objects_Readable__c,Objects_Deletable__c,' +
+    'Fields_Visible__c,Fields_Available__c,Flows__c,Approvals__c,Blocked_By__c,Actions__c,' +
+    'Editable_Objects__c,Flow_Names__c,Blocking_Rules__c FROM OrgIQ_Persona__c ' +
+    'ORDER BY Unbounded__c DESC,Reach__c DESC',
+    'OrgIQ_Persona__c')
 
   const dByScan = attributeByScan(dims, 'dimension score', (d) => ({
     code: dimCode(d.Dimension__c), name: dimShort(d.Dimension__c), fullName: d.Dimension__c,
@@ -358,6 +368,20 @@ async function queryPortfolio(tok) {
     remediation: f.Remediation__c || '', effortPoints: f.Effort_Points__c,
     blastRadius: f.Blast_Radius__c, emitsToBacklog: f.Emits_To_Backlog__c,
     ruleMaturity: f.Rule_Maturity__c, status: f.Status__c,
+    // null, not 0, where no scan history could establish a run.
+    survivedScans: f.Survived_Scans__c, resolvedInScan: f.Resolved_In_Scan__c || '',
+  }))
+  const splitList = (t) => (t || '').split(' | ').filter(Boolean)
+  const pByScan = attributeByScan(people, 'persona', (p) => ({
+    name: p.Name, kind: p.Persona_Kind__c, summary: p.Summary__c || '',
+    unbounded: p.Unbounded__c, blanketPerms: p.Blanket_Perms__c || '', reach: p.Reach__c,
+    objectsEditable: p.Objects_Editable__c, objectsReadable: p.Objects_Readable__c,
+    objectsDeletable: p.Objects_Deletable__c,
+    // Genuinely null for a permission set — it assigns no layouts.
+    fieldsVisible: p.Fields_Visible__c, fieldsAvailable: p.Fields_Available__c,
+    flows: p.Flows__c, approvals: p.Approvals__c, blockedBy: p.Blocked_By__c,
+    actions: p.Actions__c, editableObjects: splitList(p.Editable_Objects__c),
+    flowNames: splitList(p.Flow_Names__c), blockingRules: splitList(p.Blocking_Rules__c),
   }))
 
   return {
@@ -373,6 +397,7 @@ async function queryPortfolio(tok) {
         },
         dimensions: (dByScan[sid] || []).sort((a, b) => a.code.localeCompare(b.code)),
         findings: fByScan[sid] || [],
+        personas: pByScan[sid] || [],
       }
     }),
   }
