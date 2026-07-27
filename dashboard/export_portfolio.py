@@ -51,8 +51,12 @@ def main():
     a = ap.parse_args()
     org = a.target_org
 
+    enterprises = query(
+        "SELECT External_Enterprise_Id__c, Name, Industry__c, Notes__c "
+        "FROM OrgIQ_Enterprise__c ORDER BY Name", org)
+
     scans = query(
-        "SELECT Name, External_Scan_Id__c, Target_Org__c, Scan_Mode__c, "
+        "SELECT Name, External_Scan_Id__c, Enterprise_Id__c, Target_Org__c, Scan_Mode__c, "
         "Rubric_Version__c, Composite_Score__c, Readiness_Band__c, "
         "Components_Scanned__c, Semantic_Density__c, Est_Grounding_Tokens__c, "
         "Est_Remediated_Tokens__c, Removable_Restating__c, Removable_Duplicates__c, Removable_Unreferenced__c, Gate_Applied__c, Gate_Reason__c, Scan_Timestamp__c "
@@ -151,7 +155,12 @@ def main():
             "blockingRules": splitlist(p["Blocking_Rules__c"]),
         })
 
-    out = {"source": "salesforce", "scans": []}
+    out = {"source": "salesforce",
+           # Named records, not prefixes recovered from an org name.
+           "enterprises": [{"id": e["External_Enterprise_Id__c"], "name": e["Name"],
+                            "industry": e["Industry__c"] or "",
+                            "notes": e["Notes__c"] or ""} for e in enterprises],
+           "scans": []}
     for s in scans:
         sid = s["External_Scan_Id__c"]
         dim_rows = sorted(dims_by_scan[sid], key=lambda d: d["code"])
@@ -159,6 +168,7 @@ def main():
             "scan": {
                 "name": s["Name"],
                 "externalId": sid,
+                "enterpriseId": s["Enterprise_Id__c"],
                 "targetOrg": s["Target_Org__c"],
                 "scanMode": s["Scan_Mode__c"],
                 "rubricVersion": s["Rubric_Version__c"],

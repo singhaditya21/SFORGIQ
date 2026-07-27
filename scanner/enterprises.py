@@ -29,6 +29,8 @@ description to a field you do not own.
 
 from __future__ import annotations
 
+import re
+
 # ---------------------------------------------------------------- vocabulary
 #
 # (api_name, type, description) — the schema as someone would design it before
@@ -208,6 +210,26 @@ ENTERPRISES = [
         ],
     },
 ]
+
+
+def enterprise_id(name: str) -> str:
+    """A stable id for the tenant.
+
+    Derived from the name rather than stored, because the name is what the two
+    demo estates are keyed on everywhere else; what matters is that it is a
+    field on a record from here on, and not a prefix recovered by splitting a
+    free-text org name — which is what it was, and which no query could enforce.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-") or "enterprise"
+    return "ENT-" + slug
+
+
+def enterprise_record(ent: dict) -> dict:
+    """The tenant as a loadable record."""
+    return {"external_enterprise_id": enterprise_id(ent["name"]),
+            "name": ent["name"],
+            "industry": ent.get("industry", ""),
+            "notes": ent.get("notes", "")}
 
 
 def org_display_name(enterprise: str, org: str) -> str:

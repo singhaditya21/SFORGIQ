@@ -880,6 +880,7 @@ def build_portfolio():
                                            coverage=org_meta.coverage(),
                                            org_type=org_type, blast=blast,
                                            personas=personas,
+                                           enterprise=enterprises.enterprise_record(ent),
                                            org_overrides={"last_refreshed": refreshed,
                                                           "notes": notes}))
             orgs.append((name, findings))
@@ -920,6 +921,7 @@ def build_portfolio():
                     report_refs=pm.report_refs, code_tokens=pct,
                     coverage=pm.coverage(), now=past, org_type=org_type, blast=pblast,
                     personas=ppersonas,
+                    enterprise=enterprises.enterprise_record(ent),
                     org_overrides={"last_refreshed": refreshed, "notes": notes}))
         # Drift is an estate-level question: it needs every org in the estate,
         # so it runs once they all exist rather than per org as they are built.

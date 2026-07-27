@@ -523,22 +523,41 @@ export function splitName(name) {
   const i = name.indexOf(' · ')
   return i === -1 ? { base: name, label: '' } : { base: name.slice(0, i), label: name.slice(i + 3) }
 }
-// Demo mode ships more than one enterprise so an insurer and a bank can each see
-// themselves; a real install has exactly one estate, because the hub org IS the
-// enterprise. Grouping on the name prefix keeps that out of the schema entirely:
-// nothing here, and nothing in Salesforce, has a concept of "enterprise".
+// The tenant boundary.
+//
+// This used to recover the enterprise by splitting the org's free-text name on a
+// separator, and said so: "nothing here, and nothing in Salesforce, has a
+// concept of enterprise". That was a naming convention wearing the shape of a
+// boundary — two estates sat in one org distinguished by a prefix, and no query
+// could stop one seeing the other. `OrgIQ_Enterprise__c` is now a record, an org
+// is a master-detail child of it, and every scan carries its id.
+//
+// The split is kept for one job only: turning "Meridian Insurance · prod" into
+// the short label "prod" for display. It decides nothing.
 export function enterprisesOf(scans) {
-  const seen = []
+  const byId = new Map()
   for (const s of scans) {
-    const base = splitName(s.scan.targetOrg).base
-    if (!seen.includes(base)) seen.push(base)
+    const id = s.scan.enterpriseId
+    if (id && !byId.has(id)) byId.set(id, splitName(s.scan.targetOrg).base)
   }
-  return seen
+  // An export predating the tenant field would otherwise silently show nothing.
+  return byId.size ? [...byId.values()] : []
 }
 
+export function enterpriseIdOf(scans, name) {
+  for (const s of scans) {
+    if (splitName(s.scan.targetOrg).base === name) return s.scan.enterpriseId
+  }
+  return null
+}
+
+// Filtered on the id, not the label. A label collision between two tenants would
+// merge their estates; an id collision cannot happen, because it is unique on
+// the record.
 export function scansForEnterprise(scans, name) {
   if (!name) return scans
-  return scans.filter((s) => splitName(s.scan.targetOrg).base === name)
+  const id = enterpriseIdOf(scans, name)
+  return id ? scans.filter((s) => s.scan.enterpriseId === id) : scans
 }
 
 // An org now holds more than one scan — the estate dates its scan ids, so today's

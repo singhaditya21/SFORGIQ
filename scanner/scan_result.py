@@ -59,6 +59,12 @@ import metadata as sfmeta  # signal registry: coverage threshold + status vocabu
 # scans it produced cannot get out of step.
 RUBRIC_VERSION = rubric.RUBRIC_VERSION
 
+# A scan of a single org, with nobody having said which enterprise it belongs
+# to, still belongs to one. Naming it explicitly keeps every record inside the
+# tenant boundary rather than leaving a class of rows outside it.
+DEFAULT_ENTERPRISE_ID = "ENT-default"
+DEFAULT_ENTERPRISE_NAME = "This enterprise"
+
 # Which tool produced a finding. Everything this scanner emits is "OrgIQ"; the
 # field exists so findings imported from Optimizer / Health Check / Code
 # Analyzer can share the record set without a schema change.
@@ -395,7 +401,7 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
           assessed_dims=frozenset({"D1"}), now: datetime | None = None,
           report_refs=None, code_tokens=frozenset(), coverage=None,
           org_type: str = "", org_overrides: dict = None, blast=None,
-          personas=None) -> dict:
+          personas=None, enterprise: dict = None) -> dict:
     """`report_refs` / `code_tokens` are the same reference evidence the D1 rules
     run on. They are optional and trail the older arguments so existing callers
     keep working, but a caller that has them should pass them: without them the
@@ -438,10 +444,20 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
     org.update(org_overrides or {})
     org["is_production"] = org["org_type"] == "Production"
 
+    # The tenant this estate belongs to. A single-install scan has exactly one
+    # and does not need to name it, so the default is a single implicit
+    # enterprise rather than none — an org with no tenant at all would be a
+    # record the isolation predicate could never match, which is worse than a
+    # boundary of one.
+    ent = enterprise or {"external_enterprise_id": DEFAULT_ENTERPRISE_ID,
+                         "name": DEFAULT_ENTERPRISE_NAME, "industry": "", "notes": ""}
+    org["enterprise_id"] = ent["external_enterprise_id"]
+
     scan = {
         "external_scan_id": _scan_external_id(source, now),
         "target_org": source,
         "target_org_external_id": org["external_org_id"],   # links the scan to its org
+        "enterprise_id": ent["external_enterprise_id"],
         "scan_mode": scan_mode,
         "rubric_version": RUBRIC_VERSION,
         "composite_score": composite,
@@ -460,7 +476,7 @@ def build(fields, findings, source: str, scan_mode: str = "Source",
         "scan_timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.000+0000"),
     }
 
-    return {"org": org, "scan": scan, "dimensions": dim_rows,
+    return {"enterprise": ent, "org": org, "scan": scan, "dimensions": dim_rows,
             "findings": finding_rows(findings, scan["external_scan_id"], blast,
                                      org["org_type"]),
             # [] when the caller built no personas — which means this scan could

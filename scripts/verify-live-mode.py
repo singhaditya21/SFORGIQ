@@ -208,6 +208,40 @@ def main():
         else:
             check(f"{obj}", False, (payload.get("message") or "no message")[:100])
 
+    # --- the tenant boundary, against the real records ----------------------
+    print("\nTenant isolation (the boundary, not the intention)")
+    tenants = [r["External_Enterprise_Id__c"] for r in json.loads(subprocess.run(
+        ["sf", "data", "query", "--query",
+         "SELECT External_Enterprise_Id__c FROM OrgIQ_Enterprise__c",
+         "--target-org", a.target_org, "--json"],
+        capture_output=True, text=True).stdout or "{}").get("result", {}).get("records", [])]
+    check("the org holds named tenants", bool(tenants), ", ".join(tenants) or "none")
+
+    def count(where):
+        out = subprocess.run(["sf", "data", "query", "--query",
+                              f"SELECT COUNT(Id) n FROM OrgIQ_Finding__c WHERE {where}",
+                              "--target-org", a.target_org, "--json"],
+                             capture_output=True, text=True)
+        recs = json.loads(out.stdout or "{}").get("result", {}).get("records", [])
+        return recs[0]["n"] if recs else -1
+
+    total = count("Id != null")
+    per = {t: count(f"Scan__r.Enterprise_Id__c = '{t}'") for t in tenants}
+    check("every finding belongs to exactly one tenant",
+          sum(per.values()) == total,
+          f"{' + '.join(str(v) for v in per.values())} = {total}")
+    check("no finding sits outside a tenant",
+          count("Scan__r.Enterprise_Id__c = null") == 0)
+    if len(tenants) > 1:
+        # The claim in plain terms: scoping to one tenant cannot return another's
+        # rows. Checked as a query, because that is how it would leak.
+        a_id, b_id = tenants[0], tenants[1]
+        crossed = count(f"Scan__r.Enterprise_Id__c = '{a_id}' AND "
+                        f"Scan__r.Target_Org_Ref__r.Enterprise__r.External_Enterprise_Id__c "
+                        f"= '{b_id}'")
+        check("a query scoped to one tenant returns none of the other's",
+              crossed == 0, f"{a_id} ∩ {b_id} = {crossed}")
+
     failed = [n for n, ok, _ in results if not ok]
     print("\n" + "-" * 68)
     if failed:

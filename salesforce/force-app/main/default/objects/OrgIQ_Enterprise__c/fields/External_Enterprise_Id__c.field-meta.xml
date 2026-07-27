@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>External_Enterprise_Id__c</fullName>
+    <description>Stable id for the tenant. Every scan carries a copy of this so a query can be scoped without a join, and every read path in this repository is required by test to carry that predicate.</description>
+    <externalId>true</externalId>
+    <label>External Enterprise Id</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

@@ -12,5 +12,5 @@
         <label>Org Name</label>
         <type>Text</type>
     </nameField>
-    <sharingModel>ReadWrite</sharingModel>
+    <sharingModel>ControlledByParent</sharingModel>
 </CustomObject>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Enterprise_Id__c</fullName>
+    <description>External id of the enterprise this scan belongs to, copied onto the scan. Salesforce permits three levels of custom master-detail and Enterprise to Org to Scan to Finding is four, so the inheritance chain has to break; it breaks here, and this key is what every read path scopes on instead. tests/test_isolation.py fails if any query in this repository reads scan data without it.</description>
+    <label>Enterprise Id</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

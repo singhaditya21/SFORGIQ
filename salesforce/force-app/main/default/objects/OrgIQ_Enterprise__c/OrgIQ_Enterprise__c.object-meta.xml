@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>One enterprise — the tenant boundary. Until this existed, an enterprise was a prefix in a free-text org name and the dashboard recovered it by splitting on a separator, which is a naming convention rather than a boundary: nothing stopped a query returning another enterprise's estate. Its org-wide default is Private, so the platform denies by default and access is granted per enterprise rather than assumed.</description>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <enableActivities>false</enableActivities>
+    <enableHistory>false</enableHistory>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <label>OrgIQ Enterprise</label>
+    <pluralLabel>OrgIQ Enterprises</pluralLabel>
+    <nameField>
+        <label>Enterprise</label>
+        <type>Text</type>
+    </nameField>
+    <sharingModel>Private</sharingModel>
+</CustomObject>

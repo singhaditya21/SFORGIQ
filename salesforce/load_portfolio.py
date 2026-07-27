@@ -25,6 +25,7 @@ from pathlib import Path
 SCAN, FINDING, DIM = "OrgIQ_Scan__c", "OrgIQ_Finding__c", "OrgIQ_Dimension_Score__c"
 PERSONA = "OrgIQ_Persona__c"
 TARGET_ORG = "OrgIQ_Target_Org__c"
+ENTERPRISE = "OrgIQ_Enterprise__c"
 
 
 def sf(args, capture=True):
@@ -82,6 +83,34 @@ def main():
         sf(["data", "delete", "bulk", "--sobject", SCAN, "--file", str(tmp / "del.csv"),
             "--target-org", org, "--wait", a.wait])
 
+    # 1a) upsert the tenants ----------------------------------------------
+    # First, and before the orgs: Target_Org.Enterprise__c is a master-detail, so
+    # an org literally cannot be created outside an enterprise. That is the
+    # point — the boundary is the platform's, not a filter the query layer has
+    # to remember.
+    tenants = {}
+    for s in scans:
+        e = s.get("enterprise")
+        if e:
+            tenants[e["external_enterprise_id"]] = e
+    ent_id_by_ext = {}
+    if tenants:
+        ent_cols = ["External_Enterprise_Id__c", "Name", "Industry__c", "Notes__c"]
+        write_csv(tmp / "enterprises.csv", ent_cols, [{
+            "External_Enterprise_Id__c": e["external_enterprise_id"],
+            "Name": e["name"][:80],
+            "Industry__c": e.get("industry", ""),
+            "Notes__c": e.get("notes", ""),
+        } for e in tenants.values()])
+        print(f"\u2192 upserting {len(tenants)} enterprise(s)\u2026")
+        sf(["data", "upsert", "bulk", "--sobject", ENTERPRISE, "--file",
+            str(tmp / "enterprises.csv"), "--external-id", "External_Enterprise_Id__c",
+            "--target-org", org, "--wait", a.wait])
+        for r in sf(["data", "query", "--query",
+                     f"SELECT Id, External_Enterprise_Id__c FROM {ENTERPRISE}",
+                     "--target-org", org])["records"]:
+            ent_id_by_ext[r["External_Enterprise_Id__c"]] = r["Id"]
+
     # 1b) upsert the orgs the scans belong to ------------------------------
     # Upserted, not wiped: an org outlives any one scan of it, and its type,
     # refresh date and notes are the context every scan is read against.
@@ -92,10 +121,12 @@ def main():
             orgs[o["external_org_id"]] = o
     org_id_by_ext = {}
     if orgs:
-        org_cols = ["External_Org_Id__c", "Name", "Org_Type__c", "Is_Production__c",
-                    "Instance_Url__c", "Last_Refreshed__c", "Notes__c"]
+        org_cols = ["External_Org_Id__c", "Enterprise__c", "Name", "Org_Type__c",
+                    "Is_Production__c", "Instance_Url__c", "Last_Refreshed__c",
+                    "Notes__c"]
         write_csv(tmp / "orgs.csv", org_cols, [{
             "External_Org_Id__c": o["external_org_id"],
+            "Enterprise__c": ent_id_by_ext.get(o.get("enterprise_id"), ""),
             "Name": o["name"][:80],
             "Org_Type__c": o["org_type"],
             "Is_Production__c": b(o["is_production"]),
@@ -112,7 +143,8 @@ def main():
             org_id_by_ext[r["External_Org_Id__c"]] = r["Id"]
 
     # 2) insert scans ------------------------------------------------------
-    scan_cols = ["External_Scan_Id__c", "Target_Org__c", "Target_Org_Ref__c", "Scan_Mode__c",
+    scan_cols = ["External_Scan_Id__c", "Enterprise_Id__c", "Target_Org__c",
+                 "Target_Org_Ref__c", "Scan_Mode__c",
                  "Rubric_Version__c", "Composite_Score__c", "Readiness_Band__c",
                  "Components_Scanned__c", "Semantic_Density__c",
                  "Est_Grounding_Tokens__c", "Est_Remediated_Tokens__c", "Removable_Restating__c",
@@ -120,6 +152,9 @@ def main():
                  "Gate_Applied__c", "Gate_Reason__c", "Scan_Timestamp__c"]
     write_csv(tmp / "scans.csv", scan_cols, [{
         "External_Scan_Id__c": s["scan"]["external_scan_id"],
+        # Denormalised: the master-detail chain runs out of levels before it
+        # reaches the scan, so this is what every read path scopes on.
+        "Enterprise_Id__c": s["scan"].get("enterprise_id", ""),
         "Target_Org__c": s["scan"]["target_org"],
         "Target_Org_Ref__c": org_id_by_ext.get(s["scan"].get("target_org_external_id"), ""),
         "Scan_Mode__c": s["scan"]["scan_mode"],

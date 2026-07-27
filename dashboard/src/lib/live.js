@@ -326,16 +326,24 @@ function attributeByScan(rows, label, shape) {
 
 // Query the org and return the same shape as the bundled portfolio.json.
 async function queryPortfolio(tok) {
+  // The tenants themselves. Demo mode ships them, so live mode has to fetch
+  // them or the estate switcher has nothing to switch between against a real
+  // org — the same "live shows less than demo" failure, one level up.
+  const tenants = await soql(tok,
+    'SELECT External_Enterprise_Id__c,Name,Industry__c,Notes__c FROM OrgIQ_Enterprise__c '
+    + 'ORDER BY Name',
+    'OrgIQ_Enterprise__c')
+
   const scans = await soql(tok,
     'SELECT Name,External_Scan_Id__c,Target_Org__c,Scan_Mode__c,Rubric_Version__c,' +
     'Composite_Score__c,Readiness_Band__c,Components_Scanned__c,Gate_Applied__c,' +
-    'Gate_Reason__c,Scan_Timestamp__c,Semantic_Density__c,Est_Grounding_Tokens__c,' +
+    'Gate_Reason__c,Scan_Timestamp__c,Enterprise_Id__c,Semantic_Density__c,Est_Grounding_Tokens__c,' +
     'Est_Remediated_Tokens__c,Removable_Restating__c,Removable_Duplicates__c,' +
     'Removable_Unreferenced__c FROM OrgIQ_Scan__c ORDER BY Composite_Score__c ASC',
     'OrgIQ_Scan__c')
   // Nothing to hang findings off, and two more queries would only be able to
   // confirm it. The caller works out *why* it is empty.
-  if (!scans.length) return { source: 'live', scans: [] }
+  if (!scans.length) return { source: 'live', enterprises: [], scans: [] }
 
   const dims = await soql(tok,
     'SELECT Scan__r.External_Scan_Id__c,Dimension__c,Score__c,Rule_Coverage__c,' +
@@ -395,6 +403,10 @@ async function queryPortfolio(tok) {
 
   return {
     source: 'live',
+    enterprises: tenants.map((e) => ({
+      id: e.External_Enterprise_Id__c, name: e.Name,
+      industry: e.Industry__c || '', notes: e.Notes__c || '',
+    })),
     scans: scans.map((s) => {
       const sid = s.External_Scan_Id__c
       return {
@@ -403,6 +415,7 @@ async function queryPortfolio(tok) {
           rubricVersion: s.Rubric_Version__c, compositeScore: s.Composite_Score__c,
           readinessBand: s.Readiness_Band__c, componentsScanned: s.Components_Scanned__c,
           gateApplied: s.Gate_Applied__c, gateReason: s.Gate_Reason__c || '', timestamp: s.Scan_Timestamp__c,
+          enterpriseId: s.Enterprise_Id__c,
           // Percent(3,1) in the org — 42.5 means 42.5% — while everything
           // downstream speaks the 0-1 share. Converted once, here, exactly as
           // export_portfolio.py does for demo mode.
