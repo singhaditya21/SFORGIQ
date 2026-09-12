@@ -1,8 +1,15 @@
-# Packaging artifact (the delivered bundle; project source lives at repo root)
-files.zip
+# The 24 July delivery bundle — the project's origin snapshot. Everything in it
+# has long since been superseded by the source at repo root, so it is history
+# rather than code; it is tracked because it is the one thing in this folder
+# that could not be reconstructed from the repository if the folder went away.
 
 # Local tooling / editor
-.claude/
+#
+# .claude/launch.json is project configuration, not a personal preference — it
+# is how the dashboard dev server gets started — so it is tracked, while the
+# machine-local settings next to it are not.
+.claude/*
+!.claude/launch.json
 .vscode/
 .idea/
 .DS_Store
